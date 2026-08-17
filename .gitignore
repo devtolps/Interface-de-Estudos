@@ -1,0 +1,15 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Exported study data (personal, shouldn't go to a public repo)
+python/*.json
+!python/example-export.json

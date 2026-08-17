@@ -1,0 +1,2952 @@
+<!DOCTYPE html>
+<!--
+  ================================================================
+  STUDY SYSTEM — index.html
+  ================================================================
+  This is the single entry point of the app. It is a "Single Page
+  Application" (SPA): there is only ONE html file, and JavaScript
+  swaps which <section> is visible depending on which tab the user
+  clicks. This keeps everything in memory, so switching tabs is
+  instant (no page reload).
+
+  Vocabulary used across the project (English comments, PT-BR UI):
+    - "subject"   -> matéria/tema
+    - "note"      -> anotação
+    - "flashcard" -> cartão de estudo
+    - "review"    -> revisão (spaced repetition)
+    - "session"   -> um ciclo de pomodoro
+-->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study System</title>
+
+  <!-- Favicon: a small clock, matching the "study session" theme of
+       the whole app (see the same icon repeated in the sidebar
+       brand mark below). It's a data: URI -- the SVG source is
+       embedded directly in this tag -- for the same reason the CSS
+       and JS are inlined into this file: some browsers restrict a
+       page opened via file:// from loading OTHER local files, and a
+       favicon is just another file the browser would otherwise have
+       to fetch separately. -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2314171F'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23F2A65A' stroke-width='2.2'/%3E%3Cpath d='M16 16L11.8 11.6' stroke='%23F2A65A' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M16 16L20.6 11.9' stroke='%23F7C873' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='1.6' fill='%23F7C873'/%3E%3C/svg%3E" />
+
+  <!-- Google Fonts: a serif "display" face for headings (Fraunces) and
+       a clean "body" face for text (Inter). A monospace face (JetBrains
+       Mono) is used for numbers -- timers, streak counters, stats --
+       because tabular figures look sharper in mono. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+
+  <!--
+    NOTE ON THIS <style> BLOCK:
+    This is the exact same CSS as css/style.css (that file still
+    exists in the repo as the "readable" source to study/edit).
+    It's duplicated here, inline, so the page renders correctly no
+    matter how it's opened -- some browsers (Safari in particular)
+    are stricter about a file opened via file:// reaching out to
+    ANOTHER local file (like css/style.css) for its stylesheet.
+    Inlining removes that dependency entirely.
+    If you edit the design, edit BOTH css/style.css and this block
+    (or, once you're comfortable, delete this block and switch back
+    to <link rel="stylesheet" href="css/style.css"> -- that works
+    fine too when served over http/https instead of a raw file://).
+  -->
+  <style>
+/* ================================================================
+   STUDY SYSTEM — style.css
+   ================================================================
+   DESIGN CONCEPT: "late-night study desk"
+   A study session at night: a dark navy room lit by a single warm
+   desk-lamp glow (the amber accent). Headings use a serif
+   (Fraunces) to feel like a bound notebook; body text uses Inter
+   for screen legibility; numbers (timer, streaks, stats) use
+   JetBrains Mono so digits line up like a real clock/counter.
+
+   This version adds the "polish pass": soft shadows, gradients,
+   hover motion, a subtle ambient glow behind the sidebar lamp mark,
+   and small illustrated empty states — all layered on top of the
+   same tokens and class names as before, so nothing in app.js broke.
+   ================================================================ */
+
+/* ---------- 1. DESIGN TOKENS ---------- */
+:root {
+  /* Color: named + hex, so every color used below traces back here */
+  --bg:            #12141C; /* deep navy-black, the "room" */
+  --bg-glow:       #1B2130;
+  --surface:       #1B1F2A; /* cards / panels, one step lighter */
+  --surface-hover: #232937;
+  --surface-raised:#252B39;
+  --border:        #2A3140;
+  --border-soft:   #232838;
+
+  --text:          #F3F4F7; /* primary text, near-white */
+  --text-muted:    #8B93A7; /* secondary text */
+  --text-faint:    #5C6478;
+
+  --accent:        #F2A65A; /* desk-lamp amber — primary actions */
+  --accent-2:      #F7C873; /* lighter amber, for gradients */
+  --accent-soft:   #F2A65A1F;
+  --accent-ring:   #F2A65A55;
+  --success:       #6FCF97; /* mastered card / streak */
+  --success-soft:  #6FCF9720;
+  --danger:        #E4636F; /* overdue review */
+  --danger-soft:   #E4636F1A;
+
+  /* Type */
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Layout */
+  --sidebar-w: 268px;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+
+  /* Shadows — used sparingly, always warm-tinted to match the lamp */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 0 1px var(--border-soft), 0 12px 32px -8px rgba(242, 166, 90, 0.18);
+  --ease: cubic-bezier(.4, 0, .2, 1);
+}
+
+/* ---------- 2. RESET / BASE ---------- */
+* { box-sizing: border-box; }
+
+/* This is the "rem base": every font-size in this file (after this
+   point) is written in rem instead of px, so they're all relative
+   to THIS one number. The "Tamanho do texto" control in 🎨
+   Personalizar changes only this single value (via JS, on
+   <html>), and every piece of text in the app scales together --
+   without it, changing font size would've meant rewriting dozens
+   of individual px values across every component. */
+html {
+  font-size: 1rem;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+}
+
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.01em; }
+
+/* Visible keyboard focus everywhere (accessibility floor) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* Slim, warm-tinted scrollbars instead of the browser default */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ---------- 3. LAYOUT SHELL ---------- */
+body {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: relative;
+  background: linear-gradient(180deg, var(--bg-glow) 0%, var(--surface) 55%);
+  border-right: 1px solid var(--border-soft);
+  padding: 26px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overflow: hidden;
+}
+/* Ambient "lamp" glow behind the brand mark — the one indulgent
+   decorative touch in the whole UI, kept quiet and singular. */
+.sidebar::before {
+  content: '';
+  position: absolute;
+  top: -60px; left: -60px;
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.main {
+  padding: 30px 40px 60px;
+  overflow-y: auto;
+  background:
+    radial-gradient(600px 300px at 85% -10%, rgba(242,166,90,0.05), transparent 70%);
+}
+
+/* ---------- 4. SIDEBAR ---------- */
+.brand { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+.brand-mark {
+  font-size: 1.375rem;
+  color: var(--accent);
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(155deg, var(--accent-soft), transparent);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.brand-mark svg { width: 24px; height: 24px; display: block; }
+.brand h1 { font-size: 1.1562rem; font-weight: 600; }
+.brand-sub { margin: 2px 0 0; color: var(--text-muted); font-size: 0.75rem; }
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  color: var(--text);
+  padding: 10px 15px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8438rem;
+  transition: transform .12s var(--ease), background .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease);
+}
+.btn:hover { background: var(--border); transform: translateY(-1px); }
+.btn:active { transform: scale(0.97) translateY(0); }
+.btn-block { width: 100%; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #221604;
+  border-color: transparent;
+  box-shadow: 0 4px 14px -4px rgba(242, 166, 90, 0.55);
+}
+.btn-primary:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 6px 18px -4px rgba(242, 166, 90, 0.65);
+  transform: translateY(-1px);
+}
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: var(--surface-hover); border-color: var(--border); }
+
+.subject-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  flex: 1;
+  position: relative; z-index: 1;
+}
+/* Each subject now sits in a "row" alongside its edit/delete icons,
+   instead of being a lone button — this is what makes the sidebar
+   editable without cluttering the default (non-hover) look. */
+.subject-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.subject-row .subject-pill { flex: 1; min-width: 0; }
+.subject-row .subject-pill span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.subject-row-actions {
+  display: flex; gap: 2px;
+  opacity: 0.4; /* faint by default so touch devices can still tap
+                   them; brightens on hover for desktop users */
+  transition: opacity .15s var(--ease);
+}
+.subject-row:hover .subject-row-actions,
+.subject-row:focus-within .subject-row-actions { opacity: 1; }
+.icon-btn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-muted); border-radius: 7px; cursor: pointer;
+  font-size: 0.75rem;
+  transition: background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+.icon-btn:hover[data-delete-subject] { color: var(--danger); border-color: var(--danger); }
+
+.subject-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8438rem;
+  transition: background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.subject-pill:hover { background: var(--surface-hover); color: var(--text); }
+.subject-pill.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  font-weight: 600;
+  border-color: var(--accent-ring);
+}
+.subject-pill .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--dot, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--accent)) 25%, transparent);
+  flex-shrink: 0;
+}
+
+.sidebar-footer { border-top: 1px solid var(--border-soft); padding-top: 16px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; }
+.streak-box {
+  display: flex; align-items: center; gap: 11px;
+  background: linear-gradient(135deg, var(--surface-raised), var(--surface-hover));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+}
+.streak-flame { font-size: 1.3125rem; filter: drop-shadow(0 0 6px rgba(242,166,90,0.5)); }
+.streak-box strong { display: block; font-family: var(--font-mono); font-size: 1.0625rem; color: var(--accent-2); }
+.streak-box small { color: var(--text-muted); font-size: 0.6875rem; }
+
+/* ---------- 5b. PERSISTENCE WARNING BANNER ---------- */
+.persist-banner {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 0.8125rem;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.persist-banner[hidden] { display: none; }
+
+/* ---------- 5. TOPBAR + TABS ---------- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.topbar-actions { display: flex; gap: 8px; }
+.tabs {
+  display: flex; gap: 2px;
+  background: var(--surface);
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
+}
+.tab {
+  border: none; background: transparent; color: var(--text-muted);
+  padding: 9px 16px; border-radius: 999px; cursor: pointer;
+  font-size: 0.8438rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.tab:hover { color: var(--text); }
+.tab.is-active {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #221604;
+  box-shadow: 0 3px 10px -2px rgba(242, 166, 90, 0.5);
+}
+.tab-ic { font-size: 0.875rem; }
+
+/* ---------- 6. VIEWS ---------- */
+.view { display: none; }
+.view.is-active { display: block; animation: fadeIn .22s var(--ease); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.view-title { font-size: 1.6875rem; margin-bottom: 4px; font-weight: 600; }
+.view-subtitle { color: var(--text-muted); margin: 0 0 22px; }
+.view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+
+.empty-state {
+  color: var(--text-muted);
+  font-style: normal;
+  text-align: center;
+  padding: 30px 16px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  grid-column: 1 / -1;
+}
+
+/* ---------- 7. DASHBOARD ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
+.stat-card {
+  position: relative;
+  background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 18px 18px 16px;
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border); }
+.stat-card .stat-ic { font-size: 1.0625rem; display: block; margin-bottom: 8px; opacity: .9; }
+.stat-card .num { font-family: var(--font-mono); font-size: 1.875rem; font-weight: 700; color: var(--accent-2); display: block; line-height: 1; }
+.stat-card .label { color: var(--text-muted); font-size: 0.7812rem; display: block; margin-top: 6px; }
+.stat-card--due { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger-soft), var(--shadow-sm); }
+.stat-card--due .num { color: var(--danger); }
+
+.panel {
+  background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-sm);
+}
+.panel h3 { font-size: 0.9375rem; margin-bottom: 12px; font-weight: 600; }
+
+.due-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.due-list li {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 11px 13px; background: var(--surface-hover); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.due-list li:hover { background: var(--surface); border-color: var(--border); }
+.due-list .tag {
+  font-size: 0.6875rem; color: var(--danger); border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap; font-family: var(--font-mono);
+}
+
+/* ---------- 8. CARDS GRID (notes / flashcards) ---------- */
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+/* "Post-it" mode: color the left edge of every note/flashcard card
+   by its subject's color, like differently-colored sticky notes
+   grouped by topic. --card-accent is set inline per card by app.js;
+   this only takes visual effect when the toggle in "🎨 Personalizar"
+   is on, via the .colorize-subjects class on <body>. */
+body.colorize-subjects .card { border-left-color: var(--card-accent, var(--border-soft)); border-left-width: 4px; }
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-glow); border-color: var(--border); }
+.card .card-subject {
+  align-self: flex-start;
+  font-size: 0.6562rem;
+  color: var(--accent-2);
+  background: var(--accent-soft);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.card h4 { margin: 0; font-family: var(--font-display); font-size: 1.0312rem; font-weight: 600; line-height: 1.3; }
+.card p { margin: 0; color: var(--text-muted); font-size: 0.8125rem; flex: 1; line-height: 1.5; }
+.card-actions { display: flex; gap: 6px; margin-top: 6px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
+.card-actions button { flex: 1; font-size: 0.75rem; padding: 7px; }
+
+/* ---------- 9. REVIEW MODE ---------- */
+.review-mode-toggle {
+  display: inline-flex; gap: 2px;
+  background: var(--surface); padding: 4px; border-radius: 999px;
+  border: 1px solid var(--border-soft); margin-bottom: 20px;
+}
+.review-mode-toggle button {
+  border: none; background: transparent; color: var(--text-muted);
+  padding: 8px 16px; border-radius: 999px; cursor: pointer;
+  font-size: 0.8125rem; font-weight: 600;
+}
+.review-mode-toggle button.is-active {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #221604;
+}
+
+.review-stage { display: flex; flex-direction: column; align-items: center; gap: 20px; padding-top: 6px; }
+.flip-card {
+  width: 100%; max-width: 500px; min-height: 230px;
+  background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  font-size: 1.1875rem;
+  font-family: var(--font-display);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease);
+}
+.flip-card:hover { transform: translateY(-2px) scale(1.005); box-shadow: var(--shadow-glow); }
+.grade-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.grade-btn {
+  padding: 10px 18px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-hover); cursor: pointer; font-weight: 700; font-size: 0.8125rem;
+  transition: transform .12s var(--ease), background .15s var(--ease);
+}
+.grade-btn:hover { transform: translateY(-2px); }
+.grade-btn[data-grade="again"] { border-color: var(--danger); color: var(--danger); }
+.grade-btn[data-grade="again"]:hover { background: var(--danger-soft); }
+.grade-btn[data-grade="hard"]  { border-color: #E0B65A; color: #E0B65A; }
+.grade-btn[data-grade="hard"]:hover { background: #E0B65A1A; }
+.grade-btn[data-grade="good"]  { border-color: var(--success); color: var(--success); }
+.grade-btn[data-grade="good"]:hover { background: var(--success-soft); }
+.grade-btn[data-grade="easy"]  { border-color: var(--accent); color: var(--accent-2); }
+.grade-btn[data-grade="easy"]:hover { background: var(--accent-soft); }
+
+/* ---------- 9b. MIND MAP (linear tree, pan + zoom) ---------- */
+.mindmap-layout { display: flex; flex-direction: column; gap: 12px; }
+
+.mindmap-toolbar { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+.mindmap-toolbar input[type="search"] {
+  flex: 1; min-width: 180px;
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: 999px; padding: 9px 16px; font-size: 0.8125rem; color: var(--text);
+}
+.mindmap-toolbar input[type="search"]:focus { border-color: var(--accent); }
+.mindmap-zoom-controls { display: inline-flex; gap: 2px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 999px; padding: 3px; }
+.mindmap-zoom-controls button {
+  border: none; background: transparent; color: var(--text-muted);
+  width: 30px; height: 30px; border-radius: 999px; cursor: pointer; font-size: 0.9375rem; font-weight: 700;
+}
+.mindmap-zoom-controls button:hover { background: var(--surface-hover); color: var(--text); }
+#mm-zoom-reset { width: auto; padding: 0 14px; font-size: 0.75rem; }
+
+.mindmap-stats {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  font-size: 0.7812rem; color: var(--text-muted);
+}
+.mindmap-stats strong { color: var(--text); font-family: var(--font-mono); }
+.mindmap-stats .stat-ok { color: var(--success); font-weight: 600; }
+
+.mm-viewport {
+  position: relative;
+  height: 520px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, var(--border-soft) 1px, transparent 0) 0 0/22px 22px,
+    linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  touch-action: none;
+}
+.mm-viewport.is-dragging { cursor: grabbing; }
+.mm-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  transition: transform .12s var(--ease);
+}
+.mm-viewport.is-dragging .mm-canvas { transition: none; } /* instant while actively dragging */
+
+.mm-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.mm-edge { fill: none; stroke-width: 2; opacity: .55; }
+
+.mm-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: opacity .15s var(--ease);
+}
+.mm-node.is-dimmed { opacity: .22; }
+.mm-node.is-highlighted .mm-node-box { box-shadow: 0 0 0 2px var(--accent), var(--shadow-md); }
+
+.mm-node--root .mm-node-box {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #221604; font-family: var(--font-display); font-weight: 700; font-size: 0.9375rem;
+  padding: 12px 22px; border-radius: 999px; box-shadow: 0 6px 18px -4px rgba(242,166,90,.5);
+  white-space: nowrap;
+}
+.mm-node--category .mm-node-box {
+  background: var(--surface-hover); border: 1.5px solid var(--node-color, var(--border));
+  color: var(--text); font-weight: 700; font-size: 0.8125rem;
+  padding: 9px 18px; border-radius: 999px; white-space: nowrap;
+}
+.mm-node--leaf {
+  width: 224px;
+}
+.mm-node--leaf .mm-node-box {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--node-color, var(--accent));
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease);
+}
+.mm-node--leaf:hover .mm-node-box { transform: translateY(-2px) rotate(0deg) !important; box-shadow: var(--shadow-glow); z-index: 2; position: relative; }
+.mm-node-kind { font-size: 0.625rem; color: var(--text-muted); display: block; margin-bottom: 3px; }
+.mm-node-text {
+  font-size: 0.7812rem; color: var(--text); line-height: 1.45;
+  white-space: pre-wrap; /* full text, no clamping -- the box grows to fit it */
+  word-break: break-word;
+}
+/* "Post-it" personality: when subject-coloring is on, alternate a
+   faint tilt on the leaf boxes, like notes stuck on a corkboard.
+   Purely cosmetic -- app.js assigns .mm-tilt-a/.mm-tilt-b by index. */
+body.colorize-subjects .mm-node--leaf.mm-tilt-a .mm-node-box { transform: rotate(-1deg); }
+body.colorize-subjects .mm-node--leaf.mm-tilt-b .mm-node-box { transform: rotate(1deg); }
+
+.mindmap-hint { font-size: 0.7188rem; color: var(--text-faint); text-align: center; margin: 0; }
+
+/* ---------- 9c. NODE DETAIL MODAL (bigger "window" for full text) ---------- */
+.detail-modal { max-width: 560px; }
+.detail-modal .panel-kind {
+  font-size: 0.6562rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--accent-2); font-weight: 700;
+}
+.detail-modal h3 { font-size: 1.1875rem; margin-top: 4px; }
+.detail-modal .panel-body {
+  color: var(--text-muted); font-size: 0.875rem; line-height: 1.7; white-space: pre-wrap;
+  max-height: 40vh; overflow-y: auto;
+}
+.detail-modal .panel-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 4px; }
+
+/* 3D flip flashcard, used inside the detail modal */
+.study-flip { perspective: 1200px; min-height: 150px; }
+.study-flip-inner {
+  position: relative; width: 100%; min-height: 150px;
+  transform-style: preserve-3d; transition: transform .5s var(--ease);
+  cursor: pointer;
+}
+.study-flip.is-flipped .study-flip-inner { transform: rotateY(180deg); }
+.flip-face {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 18px; border-radius: var(--radius-sm);
+  background: var(--surface-hover); border: 1px solid var(--border-soft);
+  font-family: var(--font-display); font-size: 1rem; line-height: 1.5;
+}
+.flip-face--back { transform: rotateY(180deg); color: var(--accent-2); }
+.study-flip-hint { text-align: center; font-size: 0.6875rem; color: var(--text-faint); margin: 6px 0 0; }
+
+/* ---------- 10. POMODORO ---------- */
+
+/* ---------- 10. POMODORO ---------- */
+.pomodoro-wrap { display: flex; flex-direction: column; align-items: center; gap: 26px; margin-top: 14px; }
+.timer-ring {
+  position: relative; width: 230px; height: 230px;
+  filter: drop-shadow(0 0 24px rgba(242, 166, 90, 0.18));
+}
+.ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--surface-hover); stroke-width: 10; }
+.ring-progress {
+  fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+  stroke-dasharray: 565.48; /* 2 * PI * r(90) */
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1s linear;
+}
+.timer-readout {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+#timer-time { font-family: var(--font-mono); font-size: 2.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.timer-mode { color: var(--text-muted); font-size: 0.7188rem; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
+.timer-controls { display: flex; gap: 10px; }
+.timer-controls .btn { min-width: 110px; }
+.timer-config {
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 14px 18px;
+}
+.timer-config label { display: flex; flex-direction: column; gap: 5px; font-size: 0.7188rem; color: var(--text-muted); text-align: center; }
+.timer-config input {
+  width: 72px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 8px; text-align: center;
+  font-family: var(--font-mono);
+}
+.timer-config input:hover { border-color: var(--text-faint); }
+.timer-count { color: var(--text-muted); font-size: 0.8125rem; }
+.timer-count strong { color: var(--accent-2); font-family: var(--font-mono); }
+
+/* ---------- 11. MODAL ---------- */
+.modal-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(8, 9, 13, .68);
+  backdrop-filter: blur(3px);
+  align-items: center; justify-content: center;
+  z-index: 50;
+}
+.modal-backdrop.is-open { display: flex; animation: fadeIn .15s var(--ease); }
+.modal {
+  background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 100%; max-width: 440px;
+  display: flex; flex-direction: column; gap: 13px;
+  box-shadow: var(--shadow-md);
+  animation: modalPop .18s var(--ease);
+}
+@keyframes modalPop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.modal h3 { font-size: 1.125rem; font-weight: 600; }
+.modal label { font-size: 0.7812rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px; }
+.modal input, .modal textarea, .modal select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 11px; font-size: 0.8438rem;
+  transition: border-color .15s var(--ease);
+}
+.modal input:focus, .modal textarea:focus, .modal select:focus { border-color: var(--accent); }
+.modal textarea { resize: vertical; min-height: 74px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* ---------- 12b. THEME CUSTOMIZATION MODAL ---------- */
+.theme-section { display: flex; flex-direction: column; gap: 8px; }
+.theme-section > span { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.theme-swatches { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+.theme-swatch {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer; padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.15);
+  transition: transform .12s var(--ease), border-color .12s var(--ease);
+}
+.theme-swatch:hover { transform: scale(1.1); }
+.theme-swatch.is-selected { border-color: var(--text); }
+.theme-swatch-custom {
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+  padding: 0; cursor: pointer; background: var(--surface-hover); overflow: hidden;
+}
+.theme-swatch-custom input[type="color"] { width: 140%; height: 140%; margin: -20%; border: none; cursor: pointer; }
+
+.theme-option-row { display: flex; gap: 8px; }
+.theme-option-row button {
+  flex: 1; padding: 9px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface-hover); cursor: pointer; font-size: 0.7812rem; color: var(--text-muted);
+  transition: border-color .12s var(--ease), color .12s var(--ease), background .12s var(--ease);
+}
+.theme-option-row button.is-selected { border-color: var(--accent); color: var(--accent-2); background: var(--accent-soft); font-weight: 600; }
+
+.theme-toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface-hover); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm); padding: 11px 13px;
+}
+.theme-toggle-row label { display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; color: var(--text); cursor: pointer; }
+.theme-toggle-row small { color: var(--text-muted); font-weight: 400; font-size: 0.7188rem; }
+.theme-toggle-row input[type="checkbox"] { width: 38px; height: 22px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+
+/* ---------- 13. RESPONSIVE ---------- */
+@media (max-width: 800px) {
+  body { grid-template-columns: 1fr; }
+  .sidebar { flex-direction: row; overflow-x: auto; align-items: center; }
+  .subject-list { flex-direction: row; }
+  .main { padding: 20px; }
+  .view-title { font-size: 1.4375rem; }
+}
+
+  </style>
+</head>
+<body>
+
+  <!-- ============ SIDEBAR ============ -->
+  <!-- The sidebar behaves like the spine of a study binder: it lists
+       every subject you've created and lets you filter the whole app
+       by subject. -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9" stroke="url(#clockGradient)" stroke-width="2"/>
+          <path d="M12 12L8.8 8.4" stroke="url(#clockGradient)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M12 12L15.6 8.8" style="stroke:var(--accent-2)" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="1.3" style="fill:var(--accent-2)"/>
+          <defs>
+            <linearGradient id="clockGradient" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+              <stop style="stop-color:var(--accent)"/>
+              <stop offset="1" style="stop-color:var(--accent-2)"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </span>
+      <div>
+        <h1>Study System</h1>
+        <p class="brand-sub">seu caderno de estudos</p>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block" id="btn-new-subject">
+      + Nova matéria
+    </button>
+
+    <nav class="subject-list" id="subject-list">
+      <!-- Subjects are injected here by js/app.js -->
+      <button class="subject-pill is-active" data-subject-id="all">
+        <span class="dot" style="--dot:#F2A65A"></span> Todas as matérias
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-block" id="btn-customize">🎨 Personalizar</button>
+      <div class="streak-box" id="streak-box">
+        <span class="streak-flame">🔥</span>
+        <div>
+          <strong id="streak-count">0</strong>
+          <small>dias seguidos estudando</small>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN AREA ============ -->
+  <main class="main">
+
+    <!-- Shown only if the browser blocked localStorage (see js/storage.js).
+         Hidden by default; app.js reveals it when needed. -->
+    <div class="persist-banner" id="persist-banner" hidden>
+      ⚠️ Seu navegador bloqueou o salvamento local nesta página (comum no Safari abrindo arquivos direto do disco).
+      O app funciona, mas os dados <strong>não vão ser salvos</strong> quando você fechar a aba.
+      Tente abrir com Chrome ou Firefox, ou rode um servidor local (veja o README).
+    </div>
+
+    <!-- Top tab navigation -->
+    <header class="topbar">
+      <div class="tabs" id="tabs" role="tablist">
+        <button class="tab is-active" data-tab="dashboard"><span class="tab-ic">📊</span>Painel</button>
+        <button class="tab" data-tab="notes"><span class="tab-ic">📝</span>Anotações</button>
+        <button class="tab" data-tab="flashcards"><span class="tab-ic">🗂️</span>Flashcards</button>
+        <button class="tab" data-tab="reviews"><span class="tab-ic">🔁</span>Revisões</button>
+        <button class="tab" data-tab="pomodoro"><span class="tab-ic">⏱️</span>Pomodoro</button>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" id="btn-import">⭱ Importar dados</button>
+        <input type="file" id="input-import-file" accept="application/json" hidden />
+        <button class="btn btn-ghost" id="btn-export">⭳ Exportar dados</button>
+      </div>
+    </header>
+
+    <!-- ---------- TAB: DASHBOARD ---------- -->
+    <section class="view is-active" id="view-dashboard">
+      <h2 class="view-title">Painel</h2>
+      <div class="stat-grid" id="stat-grid">
+        <!-- stat cards injected by app.js -->
+      </div>
+
+      <div class="panel">
+        <h3>Revisões de hoje</h3>
+        <ul class="due-list" id="due-today-list">
+          <li class="empty-state">Nenhuma revisão pendente por aqui. 🎉</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ---------- TAB: NOTES ---------- -->
+    <section class="view" id="view-notes">
+      <div class="view-header">
+        <h2 class="view-title">Anotações</h2>
+        <button class="btn btn-primary" id="btn-new-note">+ Nova anotação</button>
+      </div>
+      <div class="grid-cards" id="notes-grid">
+        <p class="empty-state">Você ainda não criou nenhuma anotação.</p>
+      </div>
+    </section>
+
+    <!-- ---------- TAB: FLASHCARDS ---------- -->
+    <section class="view" id="view-flashcards">
+      <div class="view-header">
+        <h2 class="view-title">Flashcards</h2>
+        <button class="btn btn-primary" id="btn-new-flashcard">+ Novo flashcard</button>
+      </div>
+      <div class="grid-cards" id="flashcards-grid">
+        <p class="empty-state">Nenhum flashcard criado ainda.</p>
+      </div>
+    </section>
+
+    <!-- ---------- TAB: REVIEWS (spaced repetition study mode) ---------- -->
+    <section class="view" id="view-reviews">
+      <h2 class="view-title">Modo revisão</h2>
+      <p class="view-subtitle">Responda com sinceridade: isso ajusta quando o card volta a aparecer.</p>
+
+      <div class="review-mode-toggle" id="review-mode-toggle">
+        <button data-mode="map" class="is-active">🧠 Mapa mental</button>
+        <button data-mode="cards">🔁 Sequencial</button>
+      </div>
+
+      <!-- Sequential flip-card mode (original review flow) -->
+      <div class="review-stage" id="review-stage" hidden>
+        <p class="empty-state">Nenhum card para revisar agora. Volte mais tarde!</p>
+      </div>
+
+      <!-- Mind map mode: subject at the top, "Anotações" and
+           "Flashcards" branching below it, and every item as a leaf
+           under its category -- a linear (top-down tree) map, not a
+           radial one. Drag to pan, scroll/buttons to zoom, click a
+           node to open it full-size. -->
+      <div class="mindmap-layout" id="mindmap-layout">
+        <div class="mindmap-toolbar">
+          <input type="search" id="mindmap-search" placeholder="🔎 Buscar no mapa..." />
+          <div class="mindmap-zoom-controls">
+            <button id="mm-zoom-out" title="Diminuir zoom" aria-label="Diminuir zoom">−</button>
+            <button id="mm-zoom-reset" title="Centralizar">Centralizar</button>
+            <button id="mm-zoom-in" title="Aumentar zoom" aria-label="Aumentar zoom">+</button>
+          </div>
+        </div>
+        <div class="mindmap-stats" id="mindmap-stats"></div>
+        <div class="mm-viewport" id="mindmap-viewport">
+          <div class="mm-canvas" id="mindmap-canvas"></div>
+        </div>
+        <p class="mindmap-hint">Arraste pra mover · role o mouse (ou use os botões) pra dar zoom · clique num nó pra abrir</p>
+      </div>
+    </section>
+
+    <!-- ---------- TAB: POMODORO ---------- -->
+    <section class="view" id="view-pomodoro">
+      <h2 class="view-title">Pomodoro</h2>
+
+      <div class="pomodoro-wrap">
+        <div class="timer-ring" id="timer-ring">
+          <svg viewBox="0 0 200 200" class="ring-svg">
+            <circle class="ring-track" cx="100" cy="100" r="90" />
+            <circle class="ring-progress" id="ring-progress" cx="100" cy="100" r="90" />
+          </svg>
+          <div class="timer-readout">
+            <span id="timer-time">25:00</span>
+            <span class="timer-mode" id="timer-mode">foco</span>
+          </div>
+        </div>
+
+        <div class="timer-controls">
+          <button class="btn btn-primary" id="btn-timer-start">Iniciar</button>
+          <button class="btn btn-ghost" id="btn-timer-reset">Reiniciar</button>
+        </div>
+
+        <div class="timer-config">
+          <label>Foco (min) <input type="number" id="cfg-focus" min="1" max="90" value="25" /></label>
+          <label>Pausa curta (min) <input type="number" id="cfg-short" min="1" max="30" value="5" /></label>
+          <label>Pausa longa (min) <input type="number" id="cfg-long" min="1" max="60" value="15" /></label>
+        </div>
+
+        <p class="timer-count">Pomodoros concluídos hoje: <strong id="pomodoro-count">0</strong></p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ MODAL (reused for "new subject", "new note", "new flashcard") ============ -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal-body">
+      <!-- content injected dynamically by app.js -->
+    </div>
+  </div>
+
+  <!--
+    Load order matters here (storage.js -> srs.js -> pomodoro.js ->
+    app.js) because these are plain <script> tags with no
+    bundler/build step -- app.js is loaded last because it's the
+    only one that uses the other three.
+
+    These are INLINED directly into index.html (instead of
+    <script src="js/storage.js">, etc.) for the same reason the CSS
+    is inlined above: some browsers restrict a page opened via
+    file:// from loading OTHER local files. The original, separate
+    files still live in js/ -- read them there, they're identical
+    to what's pasted below, just easier to browse one at a time.
+    If you ever run this through a real local server (e.g. VS
+    Code's "Live Server", or `python3 -m http.server`) instead of
+    double-clicking the file, you can switch back to
+    <script src="js/..."> tags and it'll work the same way.
+  -->
+  <script>
+/**
+ * ================================================================
+ * STORAGE.JS
+ * ================================================================
+ * This file is the ONLY place in the whole app that talks directly
+ * to localStorage. Every other file (app.js, srs.js, pomodoro.js)
+ * goes through the functions exported here.
+ *
+ * WHY centralize this? Two reasons that matter for learning:
+ *   1. If we ever swap localStorage for a real backend (e.g. an
+ *      Express + SQLite API), we only need to rewrite THIS file.
+ *      The rest of the app wouldn't need to change at all.
+ *   2. It stops "magic strings" (like the key "study_subjects")
+ *      from being scattered across many files, which is a common
+ *      source of bugs.
+ *
+ * DATA MODEL (kept intentionally simple, all plain objects/arrays):
+ *
+ *   Subject  { id, name, color }
+ *   Note     { id, subjectId, title, body, createdAt }
+ *   Flashcard{ id, subjectId, front, back,
+ *              // spaced repetition fields (used by srs.js):
+ *              interval, easeFactor, repetitions, dueDate }
+ *   Session  { date: 'YYYY-MM-DD', pomodoros: number }
+ *
+ * We use the browser's built-in localStorage, which persists data
+ * on the user's own machine between visits, with NO server needed.
+ * That's ideal for a personal, offline-first study tool like this.
+ * ================================================================
+ */
+
+const STORAGE_KEYS = {
+  SUBJECTS: 'study_subjects',
+  NOTES: 'study_notes',
+  FLASHCARDS: 'study_flashcards',
+  SESSIONS: 'study_sessions', // one entry per day, tracks pomodoro count + streak
+  SETTINGS: 'study_settings', // pomodoro durations, and any future app-wide setting
+};
+
+/**
+ * SAFE STORAGE ADAPTER
+ * --------------------
+ * Some browsers (Safari is the main one) refuse to expose
+ * localStorage when a page is opened straight from disk
+ * (a "file://" URL). Under the hood they treat that as an "opaque
+ * origin" and throw a SecurityError the moment ANY code touches
+ * localStorage -- even just checking if it exists.
+ *
+ * To keep the app usable everywhere, we test localStorage once, up
+ * front, inside a try/catch. If it works, `backend` below IS the
+ * real localStorage and everything is saved to disk as normal.
+ * If it throws, we swap in a plain in-memory object with the same
+ * get/set/removeItem shape. The rest of this file (readList,
+ * writeList, etc.) never needs to know which one it's talking to.
+ *
+ * The trade-off: in the in-memory fallback, data is NOT saved
+ * between visits (it resets on refresh) -- but the app stays fully
+ * functional for the session, instead of silently breaking. A
+ * banner in the UI (see app.js) warns the person when this fallback
+ * is active and points them to a fix (running a local server, or
+ * using Chrome/Firefox instead of Safari for file:// pages).
+ */
+function createSafeStorage() {
+  try {
+    const testKey = '__study_system_test__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return { backend: window.localStorage, isPersistent: true };
+  } catch (err) {
+    console.warn('localStorage unavailable (likely a file:// restriction). Falling back to in-memory storage; data will not be saved between visits.', err);
+    const memory = new Map();
+    const memoryBackend = {
+      getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+      setItem: (key, value) => memory.set(key, value),
+      removeItem: (key) => memory.delete(key),
+    };
+    return { backend: memoryBackend, isPersistent: false };
+  }
+}
+
+const SafeStorage = createSafeStorage();
+
+/**
+ * Generic "read a list from localStorage" helper.
+ * Returns an empty array if the key has never been set yet,
+ * so callers never have to worry about `null` or `undefined`.
+ */
+function readList(key) {
+  const raw = SafeStorage.backend.getItem(key);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    // If the stored JSON is somehow corrupted, fail safely
+    // instead of crashing the whole app.
+    console.error(`Could not parse localStorage key "${key}"`, err);
+    return [];
+  }
+}
+
+/** Generic "write a list to localStorage" helper. */
+function writeList(key, list) {
+  SafeStorage.backend.setItem(key, JSON.stringify(list));
+}
+
+/** Same idea as readList/writeList, but for a single settings object
+ * instead of an array -- used only by SettingsStore below. */
+function readObject(key, fallback) {
+  const raw = SafeStorage.backend.getItem(key);
+  if (!raw) return fallback;
+  try {
+    return { ...fallback, ...JSON.parse(raw) };
+  } catch (err) {
+    console.error(`Could not parse localStorage key "${key}"`, err);
+    return fallback;
+  }
+}
+function writeObject(key, obj) {
+  SafeStorage.backend.setItem(key, JSON.stringify(obj));
+}
+
+/** Creates a short, reasonably-unique id without needing a library. */
+function makeId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/* ------------------------------------------------------------
+ * Public API — Subjects
+ * ------------------------------------------------------------ */
+const SubjectStore = {
+  all() {
+    return readList(STORAGE_KEYS.SUBJECTS);
+  },
+  add(name, color) {
+    const subjects = this.all();
+    const subject = { id: makeId(), name, color };
+    subjects.push(subject);
+    writeList(STORAGE_KEYS.SUBJECTS, subjects);
+    return subject;
+  },
+  /** Renames a subject and/or changes its color. Pass only the fields you want to change. */
+  update(id, { name, color } = {}) {
+    const subjects = this.all().map((s) => {
+      if (s.id !== id) return s;
+      return { ...s, ...(name !== undefined ? { name } : {}), ...(color !== undefined ? { color } : {}) };
+    });
+    writeList(STORAGE_KEYS.SUBJECTS, subjects);
+  },
+  /**
+   * Removes a subject AND everything that belongs to it (its notes
+   * and flashcards). This is a deliberate design choice: a subject
+   * with orphaned notes floating around with no home would be more
+   * confusing than useful. The confirmation prompt lives in app.js,
+   * this function just does the deletion once the user has agreed.
+   */
+  removeCascade(id) {
+    const remaining = this.all().filter((s) => s.id !== id);
+    writeList(STORAGE_KEYS.SUBJECTS, remaining);
+    NoteStore.removeBySubject(id);
+    FlashcardStore.removeBySubject(id);
+  },
+};
+
+/* ------------------------------------------------------------
+ * Public API — Notes
+ * ------------------------------------------------------------ */
+const NoteStore = {
+  all() {
+    return readList(STORAGE_KEYS.NOTES);
+  },
+  add(subjectId, title, body) {
+    const notes = this.all();
+    const note = { id: makeId(), subjectId, title, body, createdAt: Date.now() };
+    notes.push(note);
+    writeList(STORAGE_KEYS.NOTES, notes);
+    return note;
+  },
+  /** Edits an existing note's subject, title and/or body in place. */
+  update(id, { subjectId, title, body } = {}) {
+    const notes = this.all().map((n) => {
+      if (n.id !== id) return n;
+      return {
+        ...n,
+        ...(subjectId !== undefined ? { subjectId } : {}),
+        ...(title !== undefined ? { title } : {}),
+        ...(body !== undefined ? { body } : {}),
+      };
+    });
+    writeList(STORAGE_KEYS.NOTES, notes);
+  },
+  remove(id) {
+    writeList(STORAGE_KEYS.NOTES, this.all().filter((n) => n.id !== id));
+  },
+  /** Used by SubjectStore.removeCascade() when a whole subject is deleted. */
+  removeBySubject(subjectId) {
+    writeList(STORAGE_KEYS.NOTES, this.all().filter((n) => n.subjectId !== subjectId));
+  },
+};
+
+/* ------------------------------------------------------------
+ * Public API — Flashcards
+ * ------------------------------------------------------------ */
+const FlashcardStore = {
+  all() {
+    return readList(STORAGE_KEYS.FLASHCARDS);
+  },
+  add(subjectId, front, back) {
+    const cards = this.all();
+    const card = {
+      id: makeId(),
+      subjectId,
+      front,
+      back,
+      // Spaced-repetition state — see js/srs.js for how these evolve.
+      // A brand-new card is due immediately (today) so it shows up
+      // in the review queue right away.
+      interval: 0,
+      easeFactor: 2.5,
+      repetitions: 0,
+      dueDate: new Date().toISOString().slice(0, 10),
+    };
+    cards.push(card);
+    writeList(STORAGE_KEYS.FLASHCARDS, cards);
+    return card;
+  },
+  remove(id) {
+    writeList(STORAGE_KEYS.FLASHCARDS, this.all().filter((c) => c.id !== id));
+  },
+  /** Used by SubjectStore.removeCascade() when a whole subject is deleted. */
+  removeBySubject(subjectId) {
+    writeList(STORAGE_KEYS.FLASHCARDS, this.all().filter((c) => c.subjectId !== subjectId));
+  },
+  /** Overwrites one card in place (used after grading a review). */
+  update(updatedCard) {
+    const cards = this.all().map((c) => (c.id === updatedCard.id ? updatedCard : c));
+    writeList(STORAGE_KEYS.FLASHCARDS, cards);
+  },
+  /**
+   * Edits just the CONTENT of a card (subject/front/back) without
+   * touching its spaced-repetition state (interval, easeFactor,
+   * repetitions, dueDate). This is deliberately a different function
+   * from update() above: update() is for the SRS algorithm to
+   * overwrite the whole card after a review, while editContent() is
+   * for a person fixing a typo or rewording a question -- that
+   * shouldn't reset their review progress on the card.
+   */
+  editContent(id, { subjectId, front, back } = {}) {
+    const cards = this.all().map((c) => {
+      if (c.id !== id) return c;
+      return {
+        ...c,
+        ...(subjectId !== undefined ? { subjectId } : {}),
+        ...(front !== undefined ? { front } : {}),
+        ...(back !== undefined ? { back } : {}),
+      };
+    });
+    writeList(STORAGE_KEYS.FLASHCARDS, cards);
+  },
+};
+
+/* ------------------------------------------------------------
+ * Public API — Study sessions (pomodoro + streak tracking)
+ * ------------------------------------------------------------ */
+const SessionStore = {
+  all() {
+    return readList(STORAGE_KEYS.SESSIONS);
+  },
+  todayKey() {
+    return new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  },
+  /** Increments today's pomodoro count by 1, creating today's entry if needed. */
+  logPomodoro() {
+    const sessions = this.all();
+    const today = this.todayKey();
+    let entry = sessions.find((s) => s.date === today);
+    if (!entry) {
+      entry = { date: today, pomodoros: 0 };
+      sessions.push(entry);
+    }
+    entry.pomodoros += 1;
+    writeList(STORAGE_KEYS.SESSIONS, sessions);
+    return entry;
+  },
+  todayCount() {
+    const today = this.todayKey();
+    const entry = this.all().find((s) => s.date === today);
+    return entry ? entry.pomodoros : 0;
+  },
+  /**
+   * Calculates the current daily streak by walking backwards from
+   * today, day by day, counting how many consecutive days have at
+   * least one logged pomodoro.
+   */
+  currentStreak() {
+    const sessions = this.all();
+    const hasStudyOn = (dateStr) => sessions.some((s) => s.date === dateStr && s.pomodoros > 0);
+
+    let streak = 0;
+    const cursor = new Date();
+    while (true) {
+      const key = cursor.toISOString().slice(0, 10);
+      if (hasStudyOn(key)) {
+        streak += 1;
+        cursor.setDate(cursor.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    return streak;
+  },
+};
+
+/* ------------------------------------------------------------
+ * Public API — App settings (Pomodoro durations + visual theme)
+ * ------------------------------------------------------------ */
+const DEFAULT_SETTINGS = {
+  focusMinutes: 25,
+  shortBreakMinutes: 5,
+  longBreakMinutes: 15,
+  // Everything below is "🎨 Personalizar" -- the whole point is that
+  // people organize/study differently (some like a tidy, uniform
+  // look; others think in colored post-its). Nothing here changes
+  // what the app DOES, only how it looks.
+  theme: {
+    accent: '#F2A65A',      // primary accent color (buttons, active tab, timer ring...)
+    radius: 'normal',       // 'sharp' | 'normal' | 'round' -- corner roundness
+    fontSize: 'normal',     // 'small' | 'normal' | 'large' -- base text size
+    colorBySubject: true,   // color notes/flashcards/mind-map nodes by their
+                             // subject's color, like different-colored post-its,
+                             // instead of by type/review-status
+  },
+};
+
+const SettingsStore = {
+  get() {
+    const stored = readObject(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    // readObject only merges TOP-LEVEL keys, so an old save (or one
+    // missing just one theme field) could leave `theme` incomplete.
+    // Merge it one level deeper here so new theme fields always have
+    // a sane default even for people who saved settings before this
+    // feature existed.
+    return { ...DEFAULT_SETTINGS, ...stored, theme: { ...DEFAULT_SETTINGS.theme, ...(stored.theme || {}) } };
+  },
+  /** Merges in only the fields passed, keeping the rest as they were.
+   * Pass `{ theme: {...} }` to update just some theme fields. */
+  update(partial) {
+    const current = this.get();
+    const next = {
+      ...current,
+      ...partial,
+      theme: partial.theme ? { ...current.theme, ...partial.theme } : current.theme,
+    };
+    writeObject(STORAGE_KEYS.SETTINGS, next);
+    return next;
+  },
+};
+
+/* ------------------------------------------------------------
+ * Import / Export helper
+ * ------------------------------------------------------------
+ * Used by the "Importar dados" button in app.js. It takes the
+ * exact shape produced by exportData() in app.js and REPLACES
+ * everything currently stored -- subjects, notes, flashcards,
+ * sessions and settings -- with what's in the file.
+ *
+ * This exists mainly so that testing new versions of the app
+ * doesn't mean rebuilding your study data from scratch every time:
+ * export before trying a new version, import right after opening
+ * it, and you're back where you left off.
+ *
+ * It's intentionally an all-or-nothing REPLACE, not a merge --
+ * merging would mean deciding what happens when two flashcards
+ * have the same id but different content, which adds a lot of
+ * complexity for a personal single-user tool. A confirmation
+ * prompt (in app.js) warns before this runs.
+ * ------------------------------------------------------------ */
+function importAll(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Arquivo de importação inválido.');
+  }
+  writeList(STORAGE_KEYS.SUBJECTS, Array.isArray(data.subjects) ? data.subjects : []);
+  writeList(STORAGE_KEYS.NOTES, Array.isArray(data.notes) ? data.notes : []);
+  writeList(STORAGE_KEYS.FLASHCARDS, Array.isArray(data.flashcards) ? data.flashcards : []);
+  writeList(STORAGE_KEYS.SESSIONS, Array.isArray(data.sessions) ? data.sessions : []);
+  if (data.settings && typeof data.settings === 'object') {
+    writeObject(STORAGE_KEYS.SETTINGS, { ...DEFAULT_SETTINGS, ...data.settings });
+  }
+}
+
+/* ------------------------------------------------------------
+ * Export everything as one bundle for the whole data layer.
+ * (No ES modules here on purpose — this project uses plain
+ * <script> tags with no build step, so everything is attached
+ * to the global `window` object instead of using import/export.)
+ * ------------------------------------------------------------ */
+window.DataLayer = {
+  Subject: SubjectStore,
+  Note: NoteStore,
+  Flashcard: FlashcardStore,
+  Session: SessionStore,
+  Settings: SettingsStore,
+  makeId,
+  importAll,
+  isPersistent: SafeStorage.isPersistent,
+};
+
+  </script>
+  <script>
+/**
+ * ================================================================
+ * SRS.JS  (Spaced Repetition System)
+ * ================================================================
+ * Implements a SIMPLIFIED version of the SM-2 algorithm, the same
+ * family of algorithm used by tools like Anki. The core idea:
+ *
+ *   - Every time you review a card, you grade how well you
+ *     remembered it (Again / Hard / Good / Easy).
+ *   - The better you remembered it, the FARTHER in the future the
+ *     card is scheduled to appear again.
+ *   - If you forgot it ("Again"), the interval resets to almost
+ *     zero, so the card comes back very soon.
+ *
+ * This is a pure function module: given a card and a grade, it
+ * returns a NEW card object with updated scheduling fields. It does
+ * not touch localStorage directly — that's storage.js's job. This
+ * separation is a common software design pattern called
+ * "separation of concerns": SRS.JS only knows about the MATH of
+ * spaced repetition, not about HOW or WHERE data is saved.
+ * ================================================================
+ */
+
+/** Grades a user can give after seeing the answer of a flashcard. */
+const Grade = {
+  AGAIN: 'again', // "I did not remember at all"
+  HARD: 'hard',   // "I remembered, but it was difficult"
+  GOOD: 'good',   // "I remembered with normal effort"
+  EASY: 'easy',   // "It was trivial"
+};
+
+/**
+ * Returns today's date as 'YYYY-MM-DD', and a helper to add N days
+ * to a date and format it the same way. Keeping dates as plain
+ * strings (instead of Date objects) makes them trivial to compare
+ * and to store as JSON.
+ */
+function addDaysToToday(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The main scheduling function.
+ * @param {object} card  a Flashcard object from storage.js
+ *                        (must have interval, easeFactor, repetitions)
+ * @param {string} grade one of the Grade constants above
+ * @returns {object} a NEW card object with updated SRS fields
+ */
+function scheduleNextReview(card, grade) {
+  // We never mutate the original card — we build a copy. This keeps
+  // the function predictable and easy to test/reason about.
+  let { interval, easeFactor, repetitions } = card;
+
+  if (grade === Grade.AGAIN) {
+    // Forgot the card: start over, but don't punish the ease factor
+    // too harshly — a single slip shouldn't ruin long-term scheduling.
+    repetitions = 0;
+    interval = 0; // due again today
+    easeFactor = Math.max(1.3, easeFactor - 0.2);
+  } else {
+    // Remembered the card at some level -> grow the interval.
+    repetitions += 1;
+
+    if (repetitions === 1) {
+      interval = 1; // first successful review -> see it again tomorrow
+    } else if (repetitions === 2) {
+      interval = 6; // second successful review -> a week-ish later
+    } else {
+      // From the third successful review onward, the interval grows
+      // multiplicatively by the ease factor — this is what makes
+      // well-known cards show up less and less often over time.
+      interval = Math.round(interval * easeFactor);
+    }
+
+    // Adjust the ease factor itself based on how easy/hard it felt.
+    // This mirrors the original SM-2 formula, simplified.
+    if (grade === Grade.HARD) easeFactor = Math.max(1.3, easeFactor - 0.15);
+    if (grade === Grade.EASY) easeFactor = easeFactor + 0.15;
+    // GOOD leaves the ease factor unchanged.
+  }
+
+  return {
+    ...card,
+    interval,
+    easeFactor,
+    repetitions,
+    dueDate: addDaysToToday(interval),
+  };
+}
+
+/**
+ * Filters a list of flashcards down to only the ones due today
+ * (dueDate is today or earlier — "earlier" covers cards you skipped
+ * on a previous day, so nothing silently disappears).
+ */
+function getDueCards(allCards) {
+  const today = new Date().toISOString().slice(0, 10);
+  return allCards.filter((card) => card.dueDate <= today);
+}
+
+window.SRS = { Grade, scheduleNextReview, getDueCards };
+
+  </script>
+  <script>
+/**
+ * ================================================================
+ * POMODORO.JS
+ * ================================================================
+ * A small self-contained class that implements the Pomodoro
+ * Technique: alternating "focus" blocks with "short break" blocks,
+ * and a "long break" every 4th focus block.
+ *
+ * This is written as a CLASS (not a bunch of loose functions) on
+ * purpose: a timer has internal STATE that changes over time
+ * (how many seconds are left, whether it's running, which mode
+ * it's in), and a class is a natural way to bundle state + the
+ * behavior that operates on it together.
+ *
+ * The class knows NOTHING about the DOM (no document.querySelector
+ * here). It only exposes callbacks (onTick, onModeChange) that
+ * app.js subscribes to. This is the same "separation of concerns"
+ * idea used in srs.js: the timer's logic is independent from how
+ * it's drawn on screen, which makes it easy to test or reuse.
+ * ================================================================
+ */
+
+class PomodoroTimer {
+  /**
+   * @param {object} config
+   * @param {number} config.focusMinutes
+   * @param {number} config.shortBreakMinutes
+   * @param {number} config.longBreakMinutes
+   * @param {function} config.onTick        called every second with {secondsLeft, totalSeconds, mode}
+   * @param {function} config.onModeChange  called whenever we switch focus/break
+   * @param {function} config.onFocusComplete called each time a FULL focus block finishes
+   */
+  constructor({ focusMinutes, shortBreakMinutes, longBreakMinutes, onTick, onModeChange, onFocusComplete }) {
+    this.durations = {
+      focus: focusMinutes * 60,
+      short: shortBreakMinutes * 60,
+      long: longBreakMinutes * 60,
+    };
+
+    this.mode = 'focus';           // 'focus' | 'short' | 'long'
+    this.secondsLeft = this.durations.focus;
+    this.completedFocusBlocks = 0; // used to know when a long break is due
+    this.intervalId = null;
+
+    this.onTick = onTick || (() => {});
+    this.onModeChange = onModeChange || (() => {});
+    this.onFocusComplete = onFocusComplete || (() => {});
+  }
+
+  /** Updates the configured durations (called when the user edits the number inputs). */
+  setDurations({ focusMinutes, shortBreakMinutes, longBreakMinutes }) {
+    this.durations = {
+      focus: focusMinutes * 60,
+      short: shortBreakMinutes * 60,
+      long: longBreakMinutes * 60,
+    };
+    // If the timer isn't running, refresh the visible countdown to
+    // match the newly edited duration for the current mode.
+    if (!this.intervalId) {
+      this.secondsLeft = this.durations[this.mode];
+      this._emitTick();
+    }
+  }
+
+  start() {
+    if (this.intervalId) return; // already running, avoid double intervals
+    this.intervalId = setInterval(() => this._tick(), 1000);
+  }
+
+  pause() {
+    clearInterval(this.intervalId);
+    this.intervalId = null;
+  }
+
+  reset() {
+    this.pause();
+    this.mode = 'focus';
+    this.completedFocusBlocks = 0;
+    this.secondsLeft = this.durations.focus;
+    this.onModeChange(this.mode);
+    this._emitTick();
+  }
+
+  isRunning() {
+    return this.intervalId !== null;
+  }
+
+  /** Internal: runs once per second while the timer is active. */
+  _tick() {
+    this.secondsLeft -= 1;
+
+    if (this.secondsLeft <= 0) {
+      this._advanceMode();
+    } else {
+      this._emitTick();
+    }
+  }
+
+  /** Internal: decides which mode comes next and switches to it. */
+  _advanceMode() {
+    if (this.mode === 'focus') {
+      this.completedFocusBlocks += 1;
+      this.onFocusComplete(this.completedFocusBlocks);
+
+      // Every 4th completed focus block earns a long break, otherwise
+      // a short break — this is the classic Pomodoro cadence.
+      const isLongBreakDue = this.completedFocusBlocks % 4 === 0;
+      this.mode = isLongBreakDue ? 'long' : 'short';
+    } else {
+      this.mode = 'focus';
+    }
+
+    this.secondsLeft = this.durations[this.mode];
+    this.onModeChange(this.mode);
+    this._emitTick();
+  }
+
+  /** Internal: notifies the UI layer of the current countdown state. */
+  _emitTick() {
+    this.onTick({
+      secondsLeft: this.secondsLeft,
+      totalSeconds: this.durations[this.mode],
+      mode: this.mode,
+    });
+  }
+}
+
+window.PomodoroTimer = PomodoroTimer;
+
+  </script>
+  <script>
+/**
+ * ================================================================
+ * MINDMAP.JS
+ * ================================================================
+ * Calculates node positions for the LINEAR mind map in the Reviews
+ * tab: a left-to-right tree (subject -> categories -> individual
+ * notes/flashcards), not a radial circle. Like srs.js and
+ * pomodoro.js, this file only does MATH -- it returns plain
+ * numbers, never touches the DOM. app.js turns these numbers into
+ * real, auto-sized HTML boxes (see the .mm-node styles in
+ * css/style.css) and draws the connecting lines as SVG curves.
+ *
+ * SHAPE OF THE TREE (always 3 levels):
+ *
+ *   [Subject] ── [📝 Anotações] ── [note 1]
+ *             |                └── [note 2]
+ *             └ [🗂️ Flashcards] ── [card 1]
+ *                               └── [card 2]
+ *
+ * A category with zero items is skipped entirely (no empty
+ * "Anotações" branch dangling with nothing under it).
+ *
+ * WHY ESTIMATE TEXT HEIGHT HERE, IF THE BOXES ARE REAL HTML?
+ * Because the boxes are positioned with CSS `position: absolute`
+ * (so pan/zoom can move the whole canvas as one unit) instead of
+ * flowing naturally top-to-bottom. Absolute positioning means WE
+ * have to calculate non-overlapping y-coordinates ourselves, which
+ * means estimating how many lines each note/flashcard's text will
+ * wrap to at the box's fixed width. It doesn't need to be pixel
+ * perfect -- CSS `line-clamp` caps every box at 4 lines regardless
+ * -- it just needs to be close enough that boxes don't overlap.
+ * ================================================================
+ */
+
+const LEAF_W = 224;      // must match the CSS .mm-node--leaf width
+const LEAF_CHARS_PER_LINE_BASE = 28; // rough estimate for a 224px-wide box at the DEFAULT text size
+const LEAF_MAX_LINES = 40;      // effectively "no cap" -- boxes are meant to show the
+                                 // FULL text now (see css/style.css: no more line-clamp),
+                                 // this ceiling only guards against pathological input
+const LEAF_LINE_H_BASE = 17;
+const LEAF_PAD_Y = 22;   // top+bottom padding inside the box, approx
+const LEAF_MIN_H = 46;
+
+const LEVEL_GAP_X = 150; // horizontal distance between tree levels
+const LEAF_GAP_Y = 16;   // vertical gap between sibling leaves
+const CATEGORY_GAP_Y = 56; // vertical gap between the two category groups
+
+const CATEGORY_COLORS = { 'cat-notes': '#6FCF97', 'cat-cards': '#F2A65A' };
+
+/** Rough estimate of how many lines `text` will wrap to inside a
+ * box that fits `charsPerLine` characters per line, capped at
+ * `maxLines` (matching the CSS line-clamp so our spacing estimate
+ * never UNDER-shoots the real rendered height). */
+function estimateLineCount(text, charsPerLine, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  let lines = 1;
+  let col = 0;
+  for (const word of words) {
+    const needed = col === 0 ? word.length : col + 1 + word.length;
+    if (needed > charsPerLine) {
+      lines += 1;
+      col = word.length;
+    } else {
+      col = needed;
+    }
+  }
+  return Math.max(1, Math.min(maxLines, lines));
+}
+
+function leafHeight(label, fontScale) {
+  // A bigger font fits FEWER characters per line but takes MORE
+  // vertical space per line -- both move in the direction you'd
+  // expect, so "Grande" text still gets a tall-enough box and
+  // "Pequeno" text doesn't leave a big empty gap.
+  const charsPerLine = Math.max(10, Math.round(LEAF_CHARS_PER_LINE_BASE / fontScale));
+  const lineH = LEAF_LINE_H_BASE * fontScale;
+  const lines = estimateLineCount(label, charsPerLine, LEAF_MAX_LINES);
+  return Math.max(LEAF_MIN_H, LEAF_PAD_Y + lines * lineH);
+}
+
+/**
+ * @param {string} rootLabel   subject name (or "Todas as matérias")
+ * @param {Array<{id,label}>}            notesItems
+ * @param {Array<{id,label,due}>}        cardItems
+ * @param {number} [fontScale=1]  current text-size preset relative to
+ *   default (0.875 for "Pequeno", 1 for "Médio", 1.125 for "Grande" --
+ *   see FONT_SIZE_PRESETS in app.js). Keeps box height estimates
+ *   accurate no matter what text size the person has chosen in 🎨
+ *   Personalizar.
+ * @returns {{ width:number, height:number, nodes:Array, edges:Array }}
+ */
+function computeLinearMindMap(rootLabel, notesItems, cardItems, fontScale = 1) {
+  const rawCategories = [
+    { id: 'cat-notes', label: '📝 Anotações', type: 'note', items: notesItems },
+    { id: 'cat-cards', label: '🗂️ Flashcards', type: 'flashcard', items: cardItems },
+  ].filter((c) => c.items.length > 0);
+
+  const nodes = [];
+  const edges = [];
+
+  let cursorY = 30;
+  const categoryCenters = [];
+
+  rawCategories.forEach((cat) => {
+    const groupTop = cursorY;
+    const leafCenters = [];
+
+    cat.items.forEach((item) => {
+      const h = leafHeight(item.label, fontScale);
+      const cy = cursorY + h / 2;
+      leafCenters.push(cy);
+      const defaultColor = cat.type === 'note' ? CATEGORY_COLORS['cat-notes'] : (item.due ? CATEGORY_COLORS['cat-cards'] : 'var(--text-faint)');
+      nodes.push({
+        id: item.id,
+        kind: 'leaf',
+        type: cat.type,
+        due: item.due,
+        label: item.label,
+        // item.color lets the caller (app.js) override this per-node --
+        // e.g. to color every node by its SUBJECT instead of by
+        // type/due-status, for the "color-coded like post-its" theme.
+        color: item.color || defaultColor,
+        x: 0, // x is filled in once we know each level's column position (below)
+        y: cy,
+      });
+      edges.push({ from: cat.id, to: item.id, color: 'var(--border)' });
+      cursorY += h + LEAF_GAP_Y;
+    });
+
+    const groupBottom = cursorY - LEAF_GAP_Y;
+    const catY = (groupTop + groupBottom) / 2;
+    categoryCenters.push({ id: cat.id, y: catY });
+    nodes.push({ id: cat.id, kind: 'category', label: `${cat.label} (${cat.items.length})`, color: CATEGORY_COLORS[cat.id], x: 0, y: catY });
+
+    cursorY = groupBottom + CATEGORY_GAP_Y;
+  });
+
+  const totalHeight = Math.max(160, cursorY - CATEGORY_GAP_Y + 30);
+  const rootY = categoryCenters.length
+    ? (categoryCenters[0].y + categoryCenters[categoryCenters.length - 1].y) / 2
+    : totalHeight / 2;
+
+  // ---- Column (x) positions for each of the 3 levels ----
+  const rootX = 90;
+  const catX = rootX + LEVEL_GAP_X;
+  const leafX = catX + LEVEL_GAP_X;
+
+  nodes.forEach((n) => {
+    if (n.kind === 'category') n.x = catX;
+    else n.x = leafX;
+  });
+
+  nodes.unshift({ id: 'root', kind: 'root', label: rootLabel, x: rootX, y: rootY });
+  categoryCenters.forEach((cat) => edges.push({ from: 'root', to: cat.id, color: CATEGORY_COLORS[cat.id] }));
+
+  const totalWidth = leafX + LEAF_W / 2 + 60;
+
+  return { width: totalWidth, height: totalHeight, nodes, edges };
+}
+
+window.MindMap = { computeLinearMindMap };
+
+  </script>
+  <script>
+/**
+ * ================================================================
+ * APP.JS
+ * ================================================================
+ * This is the "controller" layer: it is the only file that touches
+ * the DOM (document.querySelector, innerHTML, addEventListener...).
+ * It reads/writes data through window.DataLayer (storage.js),
+ * schedules cards through window.SRS (srs.js), and drives the
+ * countdown through window.PomodoroTimer (pomodoro.js).
+ *
+ * Architecture in one sentence: storage.js and srs.js know about
+ * DATA, pomodoro.js knows about TIME, and app.js knows about the
+ * SCREEN — each file has one job.
+ *
+ * State is kept simple on purpose: `state.activeSubjectId` filters
+ * everything currently on screen, `state.currentTab` says which
+ * <section class="view"> is visible.
+ * ================================================================
+ */
+
+const { Subject, Note, Flashcard, Session, Settings } = window.DataLayer;
+
+const state = {
+  activeSubjectId: 'all',
+  currentTab: 'dashboard',
+  reviewMode: 'map',     // 'map' (mind map, default) or 'cards' (sequential flip queue)
+  reviewQueue: [],       // cards left to review in this session (cards mode)
+  reviewShowingBack: false,
+  mapZoom: 1,
+  mapPan: { x: 0, y: 0 },
+  timer: null,           // will hold a PomodoroTimer instance
+};
+
+/* ================================================================
+ * SEED DATA
+ * On the very first visit (empty localStorage), we create a couple
+ * of example subjects/cards so the app isn't a blank, confusing
+ * screen. This only runs once — as soon as real data exists, this
+ * function does nothing.
+ * ================================================================ */
+function seedIfEmpty() {
+  if (Subject.all().length > 0) return;
+
+  const s1 = Subject.add('Inglês', '#F2A65A');
+  const s2 = Subject.add('Programação', '#6FCF97');
+
+  Note.add(s1.id, 'Phrasal verbs úteis', 'give up = desistir\nfigure out = descobrir/entender\nlook forward to = ansiar por');
+  Flashcard.add(s1.id, 'O que significa "figure out"?', 'Descobrir, entender algo depois de pensar.');
+  Flashcard.add(s2.id, 'O que é Spaced Repetition?', 'Técnica de revisão em intervalos crescentes, baseada em quando você provavelmente vai esquecer.');
+}
+
+/* ================================================================
+ * SUBJECT COLOR PALETTE (used when creating a new subject)
+ * ================================================================ */
+const SUBJECT_COLORS = ['#F2A65A', '#6FCF97', '#7FB3F2', '#E4636F', '#C08AF2', '#F2E07F'];
+
+/* ================================================================
+ * THEME ("🎨 Personalizar")
+ * ================================================================
+ * Everything here is purely cosmetic -- it changes how the app
+ * LOOKS, never what it does. Settings are read once at startup and
+ * re-applied instantly whenever the person changes them in the
+ * customize modal, by writing straight to CSS custom properties on
+ * <html> (which every other stylesheet rule already reads from,
+ * since the whole app was built on CSS variables from day one --
+ * see the ":root" block at the top of css/style.css). No page
+ * reload needed.
+ * ================================================================ */
+const ACCENT_PRESETS = [
+  { name: 'Âmbar (padrão)', value: '#F2A65A' },
+  { name: 'Verde-menta', value: '#6FCF97' },
+  { name: 'Azul-céu', value: '#7FB3F2' },
+  { name: 'Coral', value: '#E4636F' },
+  { name: 'Lilás', value: '#C08AF2' },
+  { name: 'Amarelo-sol', value: '#F2E07F' },
+  { name: 'Rosa-chiclete', value: '#F28FB0' },
+];
+const RADIUS_PRESETS = { sharp: { radius: '6px', sm: '4px', lg: '8px' }, normal: { radius: '16px', sm: '10px', lg: '20px' }, round: { radius: '26px', sm: '16px', lg: '30px' } };
+// These are the ROOT font-size (the "rem base" -- see css/style.css
+// section 2). Every text size in the whole app is written in rem,
+// so changing this one number scales every piece of UI text
+// together: buttons, card text, mind map nodes, titles, all of it.
+const FONT_SIZE_PRESETS = { small: '14px', normal: '16px', large: '18px' };
+
+/** Lightens a hex color toward white by `amount` (0-1) -- used to
+ * derive the secondary gradient shade (--accent-2) from whatever
+ * single accent color the person picks, so we don't need them to
+ * also pick a second color just for gradients/highlights. */
+function lightenHex(hex, amount) {
+  const n = hex.replace('#', '');
+  const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+  const mix = (c) => Math.round(c + (255 - c) * amount);
+  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Applies the current theme settings to the page. Called once at
+ * startup and again every time the customize modal saves a change. */
+function applyTheme(theme) {
+  const root = document.documentElement.style;
+  root.setProperty('--accent', theme.accent);
+  root.setProperty('--accent-2', lightenHex(theme.accent, 0.22));
+  root.setProperty('--accent-soft', theme.accent + '1F');
+  root.setProperty('--accent-ring', theme.accent + '55');
+
+  const r = RADIUS_PRESETS[theme.radius] || RADIUS_PRESETS.normal;
+  root.setProperty('--radius', r.radius);
+  root.setProperty('--radius-sm', r.sm);
+  root.setProperty('--radius-lg', r.lg);
+
+  document.documentElement.style.fontSize = FONT_SIZE_PRESETS[theme.fontSize] || FONT_SIZE_PRESETS.normal;
+  document.body.classList.toggle('colorize-subjects', !!theme.colorBySubject);
+}
+
+function openCustomizeModal() {
+  const theme = Settings.get().theme;
+
+  const swatches = ACCENT_PRESETS.map((p) => `
+    <button class="theme-swatch ${p.value.toLowerCase() === theme.accent.toLowerCase() ? 'is-selected' : ''}"
+            style="background:${p.value}" data-accent="${p.value}" title="${p.name}" aria-label="${p.name}"></button>
+  `).join('');
+
+  openModal(`
+    <h3>🎨 Personalizar</h3>
+    <p class="empty-state" style="text-align:left;padding:0;background:none;border:none;margin:-6px 0 2px;">
+      Deixa do seu jeito -- isso só muda a aparência, nada do que você já criou é afetado.
+    </p>
+
+    <div class="theme-section">
+      <span>Cor principal</span>
+      <div class="theme-swatches" id="theme-swatches">
+        ${swatches}
+        <label class="theme-swatch-custom" title="Cor personalizada">
+          <input type="color" id="theme-accent-custom" value="${theme.accent}" />
+        </label>
+      </div>
+    </div>
+
+    <div class="theme-section">
+      <span>Cantos</span>
+      <div class="theme-option-row" id="theme-radius-row">
+        <button data-radius="sharp" class="${theme.radius === 'sharp' ? 'is-selected' : ''}">Retos</button>
+        <button data-radius="normal" class="${theme.radius === 'normal' ? 'is-selected' : ''}">Normais</button>
+        <button data-radius="round" class="${theme.radius === 'round' ? 'is-selected' : ''}">Arredondados</button>
+      </div>
+    </div>
+
+    <div class="theme-section">
+      <span>Tamanho do texto</span>
+      <div class="theme-option-row" id="theme-fontsize-row">
+        <button data-fontsize="small" class="${theme.fontSize === 'small' ? 'is-selected' : ''}">Pequeno</button>
+        <button data-fontsize="normal" class="${theme.fontSize === 'normal' ? 'is-selected' : ''}">Médio</button>
+        <button data-fontsize="large" class="${theme.fontSize === 'large' ? 'is-selected' : ''}">Grande</button>
+      </div>
+    </div>
+
+    <div class="theme-toggle-row">
+      <label for="theme-colorize">
+        📌 Colorir por matéria
+        <small>Anotações, flashcards e o mapa mental ganham a cor da matéria -- tipo post-its</small>
+      </label>
+      <input type="checkbox" id="theme-colorize" ${theme.colorBySubject ? 'checked' : ''} />
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Fechar</button>
+    </div>
+  `);
+
+  // Every control applies (and saves) immediately -- no separate
+  // "Salvar" button here, so you can see each change live before
+  // deciding to keep it.
+  const liveUpdate = (partial) => {
+    const next = Settings.update({ theme: partial });
+    applyTheme(next.theme);
+    renderAll();
+    if (state.currentTab === 'reviews') renderReviewsTab();
+  };
+
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+
+  document.querySelectorAll('#theme-swatches .theme-swatch').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#theme-swatches .theme-swatch').forEach((b) => b.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      liveUpdate({ accent: btn.dataset.accent });
+    });
+  });
+  document.getElementById('theme-accent-custom').addEventListener('input', (e) => {
+    document.querySelectorAll('#theme-swatches .theme-swatch').forEach((b) => b.classList.remove('is-selected'));
+    liveUpdate({ accent: e.target.value });
+  });
+  document.querySelectorAll('#theme-radius-row button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#theme-radius-row button').forEach((b) => b.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      liveUpdate({ radius: btn.dataset.radius });
+    });
+  });
+  document.querySelectorAll('#theme-fontsize-row button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#theme-fontsize-row button').forEach((b) => b.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      liveUpdate({ fontSize: btn.dataset.fontsize });
+    });
+  });
+  document.getElementById('theme-colorize').addEventListener('change', (e) => {
+    liveUpdate({ colorBySubject: e.target.checked });
+  });
+}
+
+/* ================================================================
+ * RENDER: SIDEBAR — subject list
+ * ================================================================ */
+function renderSubjectList() {
+  const list = document.getElementById('subject-list');
+  const subjects = Subject.all();
+
+  const allPill = `
+    <div class="subject-row">
+      <button class="subject-pill ${state.activeSubjectId === 'all' ? 'is-active' : ''}" data-subject-id="all">
+        <span class="dot" style="--dot:#F2A65A"></span> Todas as matérias
+      </button>
+    </div>`;
+
+  const rows = subjects.map((s) => `
+    <div class="subject-row">
+      <button class="subject-pill ${state.activeSubjectId === s.id ? 'is-active' : ''}" data-subject-id="${s.id}">
+        <span class="dot" style="--dot:${s.color}"></span> ${escapeHtml(s.name)}
+      </button>
+      <div class="subject-row-actions">
+        <button class="icon-btn" data-edit-subject="${s.id}" title="Editar matéria" aria-label="Editar matéria">✎</button>
+        <button class="icon-btn" data-delete-subject="${s.id}" title="Excluir matéria" aria-label="Excluir matéria">🗑</button>
+      </div>
+    </div>`).join('');
+
+  list.innerHTML = allPill + rows;
+
+  list.querySelectorAll('.subject-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.activeSubjectId = btn.dataset.subjectId;
+      renderAll();
+      if (state.currentTab === 'reviews') renderReviewsTab();
+    });
+  });
+
+  list.querySelectorAll('[data-edit-subject]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const subject = Subject.all().find((s) => s.id === btn.dataset.editSubject);
+      if (subject) openEditSubjectModal(subject);
+    });
+  });
+
+  list.querySelectorAll('[data-delete-subject]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const subject = Subject.all().find((s) => s.id === btn.dataset.deleteSubject);
+      if (!subject) return;
+      const noteCount = Note.all().filter((n) => n.subjectId === subject.id).length;
+      const cardCount = Flashcard.all().filter((c) => c.subjectId === subject.id).length;
+      const confirmed = window.confirm(
+        `Excluir "${subject.name}"? Isso também apaga ${noteCount} anotação(ões) e ${cardCount} flashcard(s) dessa matéria. Essa ação não pode ser desfeita.`
+      );
+      if (!confirmed) return;
+
+      Subject.removeCascade(subject.id);
+      if (state.activeSubjectId === subject.id) state.activeSubjectId = 'all';
+      renderAll();
+    });
+  });
+}
+
+/* ================================================================
+ * RENDER: DASHBOARD
+ * ================================================================ */
+function renderDashboard() {
+  const subjects = Subject.all();
+  const notes = Note.all();
+  const cards = Flashcard.all();
+  const dueCards = window.SRS.getDueCards(cards);
+
+  document.getElementById('stat-grid').innerHTML = `
+    <div class="stat-card"><span class="stat-ic">📚</span><span class="num">${subjects.length}</span><span class="label">Matérias</span></div>
+    <div class="stat-card"><span class="stat-ic">📝</span><span class="num">${notes.length}</span><span class="label">Anotações</span></div>
+    <div class="stat-card"><span class="stat-ic">🗂️</span><span class="num">${cards.length}</span><span class="label">Flashcards</span></div>
+    <div class="stat-card stat-card--due"><span class="stat-ic">🔁</span><span class="num">${dueCards.length}</span><span class="label">Revisões pendentes</span></div>
+  `;
+
+  const dueList = document.getElementById('due-today-list');
+  if (dueCards.length === 0) {
+    dueList.innerHTML = `<li class="empty-state">Nenhuma revisão pendente por aqui. 🎉</li>`;
+  } else {
+    dueList.innerHTML = dueCards.slice(0, 6).map((c) => `
+      <li>
+        <span>${escapeHtml(truncate(c.front, 60))}</span>
+        <span class="tag">${c.dueDate}</span>
+      </li>
+    `).join('');
+  }
+
+  document.getElementById('streak-count').textContent = Session.currentStreak();
+  document.getElementById('pomodoro-count').textContent = Session.todayCount();
+}
+
+/* ================================================================
+ * RENDER: NOTES
+ * ================================================================ */
+function renderNotes() {
+  const notes = filterBySubject(Note.all());
+  const grid = document.getElementById('notes-grid');
+
+  if (notes.length === 0) {
+    grid.innerHTML = `<p class="empty-state">Nenhuma anotação nesta matéria ainda.</p>`;
+    return;
+  }
+
+  grid.innerHTML = notes.map((n) => `
+    <div class="card" style="--card-accent:${subjectColor(n.subjectId)}">
+      <span class="card-subject">${subjectName(n.subjectId)}</span>
+      <h4>${escapeHtml(n.title)}</h4>
+      <p>${escapeHtml(truncate(n.body, 140))}</p>
+      <div class="card-actions">
+        <button class="btn btn-ghost" data-edit-note="${n.id}">Editar</button>
+        <button class="btn btn-ghost" data-delete-note="${n.id}">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-edit-note]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const note = Note.all().find((n) => n.id === btn.dataset.editNote);
+      if (note) openEditNoteModal(note);
+    });
+  });
+
+  grid.querySelectorAll('[data-delete-note]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      Note.remove(btn.dataset.deleteNote);
+      renderAll();
+    });
+  });
+}
+
+/* ================================================================
+ * RENDER: FLASHCARDS (management grid, not the review mode)
+ * ================================================================ */
+function renderFlashcards() {
+  const cards = filterBySubject(Flashcard.all());
+  const grid = document.getElementById('flashcards-grid');
+
+  if (cards.length === 0) {
+    grid.innerHTML = `<p class="empty-state">Nenhum flashcard nesta matéria ainda.</p>`;
+    return;
+  }
+
+  grid.innerHTML = cards.map((c) => `
+    <div class="card" style="--card-accent:${subjectColor(c.subjectId)}">
+      <span class="card-subject">${subjectName(c.subjectId)}</span>
+      <h4>${escapeHtml(truncate(c.front, 60))}</h4>
+      <p>${escapeHtml(truncate(c.back, 100))}</p>
+      <div class="card-actions">
+        <button class="btn btn-ghost" data-edit-card="${c.id}">Editar</button>
+        <button class="btn btn-ghost" data-delete-card="${c.id}">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-edit-card]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const card = Flashcard.all().find((c) => c.id === btn.dataset.editCard);
+      if (card) openEditFlashcardModal(card);
+    });
+  });
+
+  grid.querySelectorAll('[data-delete-card]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      Flashcard.remove(btn.dataset.deleteCard);
+      renderAll();
+    });
+  });
+}
+
+/* ================================================================
+ * RENDER: REVIEW MODE (spaced repetition study flow)
+ * ================================================================ */
+function startReviewQueue() {
+  const dueCards = window.SRS.getDueCards(filterBySubject(Flashcard.all()));
+  state.reviewQueue = dueCards;
+  state.reviewShowingBack = false;
+  renderReviewStage();
+}
+
+function renderReviewStage() {
+  const stage = document.getElementById('review-stage');
+
+  if (state.reviewQueue.length === 0) {
+    stage.innerHTML = `<p class="empty-state">Nenhum card para revisar agora. Volte mais tarde!</p>`;
+    return;
+  }
+
+  const card = state.reviewQueue[0];
+  const faceText = state.reviewShowingBack ? card.back : card.front;
+
+  stage.innerHTML = `
+    <p class="empty-state">${state.reviewQueue.length} card(s) restantes nesta sessão</p>
+    <div class="flip-card" id="flip-card">${escapeHtml(faceText)}</div>
+    ${state.reviewShowingBack ? `
+      <div class="grade-row">
+        <button class="grade-btn" data-grade="again">Errei</button>
+        <button class="grade-btn" data-grade="hard">Difícil</button>
+        <button class="grade-btn" data-grade="good">Bom</button>
+        <button class="grade-btn" data-grade="easy">Fácil</button>
+      </div>
+    ` : `<p class="empty-state">Clique no card para ver a resposta</p>`}
+  `;
+
+  document.getElementById('flip-card').addEventListener('click', () => {
+    state.reviewShowingBack = !state.reviewShowingBack;
+    renderReviewStage();
+  });
+
+  stage.querySelectorAll('.grade-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const grade = btn.dataset.grade;
+      const updated = window.SRS.scheduleNextReview(card, grade);
+      Flashcard.update(updated);
+
+      state.reviewQueue.shift();
+      state.reviewShowingBack = false;
+      renderReviewStage();
+      renderDashboard(); // due-count changed
+    });
+  });
+}
+
+/* ================================================================
+ * RENDER: REVIEWS TAB — dispatches to whichever sub-mode is active
+ * ================================================================ */
+function renderReviewsTab() {
+  const isMap = state.reviewMode === 'map';
+  document.getElementById('mindmap-layout').hidden = !isMap;
+  document.getElementById('review-stage').hidden = isMap;
+
+  if (isMap) {
+    renderMindMap({ refit: true });
+  } else {
+    startReviewQueue();
+  }
+}
+
+/* ================================================================
+ * RENDER: MIND MAP MODE (linear tree, pan + zoom, node -> modal)
+ * ================================================================
+ * The subject sits at the top, "Anotações" and "Flashcards" branch
+ * below it, and every note/flashcard is a leaf card under its
+ * category (see js/mindmap.js for the coordinate math). Leaves are
+ * real HTML boxes (not tiny SVG circles), so they grow to fit their
+ * text and stay readable. Clicking one opens a full detail window
+ * (a modal) instead of a cramped side panel.
+ * ================================================================ */
+function mindMapNoteItems() {
+  const colorBySubject = Settings.get().theme.colorBySubject;
+  return filterBySubject(Note.all()).map((n) => ({
+    id: n.id, type: 'note', label: n.title,
+    color: colorBySubject ? subjectColor(n.subjectId) : undefined,
+  }));
+}
+function mindMapFlashcardItems() {
+  const today = new Date().toISOString().slice(0, 10);
+  const colorBySubject = Settings.get().theme.colorBySubject;
+  return filterBySubject(Flashcard.all()).map((c) => ({
+    id: c.id, type: 'flashcard', label: c.front, due: c.dueDate <= today,
+    color: colorBySubject ? subjectColor(c.subjectId) : undefined,
+  }));
+}
+function mindMapCenterLabel() {
+  if (state.activeSubjectId === 'all') return 'Todas as matérias';
+  const s = Subject.all().find((s) => s.id === state.activeSubjectId);
+  return s ? s.name : 'Matéria';
+}
+
+/** Builds a smooth vertical "elbow" curve between a parent and child node. */
+function edgePath(from, to) {
+  const midY = (from.y + to.y) / 2;
+  return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
+}
+
+function renderMindMap(opts = {}) {
+  const notesItems = mindMapNoteItems();
+  const cardItems = mindMapFlashcardItems();
+  const canvas = document.getElementById('mindmap-canvas');
+  const total = notesItems.length + cardItems.length;
+
+  // ---- Stats strip (a little "how am I doing" readout) ----
+  const dueCount = cardItems.filter((c) => c.due).length;
+  const stats = document.getElementById('mindmap-stats');
+  if (total === 0) {
+    stats.innerHTML = '';
+  } else {
+    stats.innerHTML = `
+      <span>📝 <strong>${notesItems.length}</strong> anotaç${notesItems.length === 1 ? 'ão' : 'ões'}</span>
+      <span>🗂️ <strong>${cardItems.length}</strong> flashcard${cardItems.length === 1 ? '' : 's'}</span>
+      ${dueCount > 0
+        ? `<span>🔁 <strong>${dueCount}</strong> pendente${dueCount === 1 ? '' : 's'} pra revisar</span>`
+        : cardItems.length > 0 ? `<span class="stat-ok">✅ tudo em dia por aqui</span>` : ''}
+    `;
+  }
+
+  if (total === 0) {
+    canvas.innerHTML = `<p class="empty-state" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:320px;">Nada pra mapear ainda nesta matéria. Crie uma anotação ou flashcard primeiro.</p>`;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    return;
+  }
+
+  const FONT_SCALE = { small: 14 / 16, normal: 1, large: 18 / 16 };
+  const fontScale = FONT_SCALE[Settings.get().theme.fontSize] || 1;
+  const layout = window.MindMap.computeLinearMindMap(mindMapCenterLabel(), notesItems, cardItems, fontScale);
+  canvas.style.width = `${layout.width}px`;
+  canvas.style.height = `${layout.height}px`;
+
+  const byId = Object.fromEntries(layout.nodes.map((n) => [n.id, n]));
+  const edgesSvg = layout.edges.map((e) => {
+    const from = byId[e.from], to = byId[e.to];
+    return `<path class="mm-edge" d="${edgePath(from, to)}" stroke="${e.color || 'var(--border)'}" />`;
+  }).join('');
+
+  let leafIndex = 0;
+  const nodeHtml = layout.nodes.map((n) => {
+    if (n.kind === 'root') {
+      return `<div class="mm-node mm-node--root" style="left:${n.x}px;top:${n.y}px;"><div class="mm-node-box">${escapeHtml(n.label)}</div></div>`;
+    }
+    if (n.kind === 'category') {
+      return `<div class="mm-node mm-node--category" style="left:${n.x}px;top:${n.y}px;--node-color:${n.color};"><div class="mm-node-box">${escapeHtml(n.label)}</div></div>`;
+    }
+    // leaf (note or flashcard)
+    const tilt = leafIndex % 2 === 0 ? 'mm-tilt-a' : 'mm-tilt-b';
+    leafIndex += 1;
+    const kindLabel = n.type === 'note' ? '📝 Anotação' : (n.due ? '🗂️ Flashcard · pendente' : '🗂️ Flashcard · em dia');
+    return `
+      <div class="mm-node mm-node--leaf ${tilt}" data-node-id="${n.id}" data-node-type="${n.type}" data-node-label="${escapeHtml(n.label).toLowerCase()}" style="left:${n.x}px;top:${n.y}px;--node-color:${n.color};">
+        <div class="mm-node-box">
+          <span class="mm-node-kind">${kindLabel}</span>
+          <p class="mm-node-text">${escapeHtml(n.label)}</p>
+        </div>
+      </div>`;
+  }).join('');
+
+  canvas.innerHTML = `<svg class="mm-edges" width="${layout.width}" height="${layout.height}">${edgesSvg}</svg>${nodeHtml}`;
+
+  canvas.querySelectorAll('.mm-node--leaf').forEach((el) => {
+    el.addEventListener('click', () => openNodeDetailModal(el.dataset.nodeId, el.dataset.nodeType));
+  });
+
+  // Re-apply the current search filter (if any) to the freshly built nodes.
+  applyMindMapSearchFilter();
+
+  if (opts.refit) fitMindMapToViewport(layout.width, layout.height);
+  else applyMindMapTransform();
+}
+
+/* ---- Pan + zoom ---- */
+function applyMindMapTransform() {
+  const canvas = document.getElementById('mindmap-canvas');
+  if (!canvas) return;
+  canvas.style.transform = `translate(${state.mapPan.x}px, ${state.mapPan.y}px) scale(${state.mapZoom})`;
+}
+
+function fitMindMapToViewport(canvasWidth, canvasHeight) {
+  const viewport = document.getElementById('mindmap-viewport');
+  const vw = viewport.clientWidth || 800;
+  const vh = viewport.clientHeight || 520;
+  // Fit to width (maps can get tall, but rarely wider than the
+  // viewport looks good scaled down) -- capped so short maps don't
+  // get blown up huge.
+  const zoom = Math.max(0.45, Math.min(1, (vw - 40) / canvasWidth));
+  state.mapZoom = zoom;
+  state.mapPan = {
+    x: Math.max(20, (vw - canvasWidth * zoom) / 2),
+    y: 24,
+  };
+  applyMindMapTransform();
+}
+
+function setMindMapZoom(nextZoom) {
+  state.mapZoom = Math.max(0.4, Math.min(2, nextZoom));
+  applyMindMapTransform();
+}
+
+/** Wires drag-to-pan, wheel-to-zoom and the zoom buttons. Called
+ * once at startup -- the viewport element itself is never replaced,
+ * only its contents, so these listeners live for the app's lifetime. */
+function setupMindMapInteractions() {
+  const viewport = document.getElementById('mindmap-viewport');
+  let dragging = false;
+  let lastX = 0, lastY = 0;
+
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.mm-node')) return; // let node clicks through untouched
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    viewport.classList.add('is-dragging');
+    viewport.setPointerCapture(e.pointerId);
+  });
+  viewport.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    state.mapPan = { x: state.mapPan.x + dx, y: state.mapPan.y + dy };
+    applyMindMapTransform();
+  });
+  const stopDrag = () => { dragging = false; viewport.classList.remove('is-dragging'); };
+  viewport.addEventListener('pointerup', stopDrag);
+  viewport.addEventListener('pointerleave', stopDrag);
+
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const step = e.deltaY > 0 ? -0.1 : 0.1;
+    setMindMapZoom(state.mapZoom + step);
+  }, { passive: false });
+
+  document.getElementById('mm-zoom-in').addEventListener('click', () => setMindMapZoom(state.mapZoom + 0.15));
+  document.getElementById('mm-zoom-out').addEventListener('click', () => setMindMapZoom(state.mapZoom - 0.15));
+  document.getElementById('mm-zoom-reset').addEventListener('click', () => renderMindMap({ refit: true }));
+
+  document.getElementById('mindmap-search').addEventListener('input', applyMindMapSearchFilter);
+}
+
+/** Dims nodes that don't match the search box, highlights the ones that do. */
+function applyMindMapSearchFilter() {
+  const query = (document.getElementById('mindmap-search').value || '').trim().toLowerCase();
+  document.querySelectorAll('.mm-node--leaf').forEach((el) => {
+    if (!query) {
+      el.classList.remove('is-dimmed', 'is-highlighted');
+      return;
+    }
+    const matches = el.dataset.nodeLabel.includes(query);
+    el.classList.toggle('is-dimmed', !matches);
+    el.classList.toggle('is-highlighted', matches);
+  });
+}
+
+/* ---- Node detail modal (the "bigger window" to read/edit/review) ---- */
+function openNodeDetailModal(nodeId, nodeType) {
+  if (nodeType === 'note') {
+    const note = Note.all().find((n) => n.id === nodeId);
+    if (!note) return;
+    openModal(`
+      <div class="detail-modal">
+        <span class="panel-kind">📝 Anotação — ${subjectName(note.subjectId)}</span>
+        <h3>${escapeHtml(note.title)}</h3>
+        <p class="panel-body">${escapeHtml(note.body) || '<em>Sem conteúdo.</em>'}</p>
+        <div class="panel-actions">
+          <button class="btn btn-ghost" id="node-delete">Excluir</button>
+          <button class="btn btn-ghost" id="node-close">Fechar</button>
+          <button class="btn btn-primary" id="node-edit">Editar</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('node-close').addEventListener('click', closeModal);
+    document.getElementById('node-edit').addEventListener('click', () => openEditNoteModal(note));
+    document.getElementById('node-delete').addEventListener('click', () => {
+      Note.remove(note.id);
+      closeModal();
+      renderAll();
+      renderMindMap();
+    });
+    return;
+  }
+
+  // Flashcard node: a proper flip card + grading, all inside the modal.
+  const card = Flashcard.all().find((c) => c.id === nodeId);
+  if (!card) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const dueBadge = card.dueDate <= today
+    ? `<span class="tag">vence ${card.dueDate}</span>`
+    : `<span class="tag" style="color:var(--success);border-color:var(--success);background:var(--success-soft)">em dia até ${card.dueDate}</span>`;
+
+  openModal(`
+    <div class="detail-modal">
+      <span class="panel-kind">🗂️ Flashcard — ${subjectName(card.subjectId)} · ${dueBadge}</span>
+      <div class="study-flip" id="node-flip">
+        <div class="study-flip-inner">
+          <div class="flip-face flip-face--front">${escapeHtml(card.front)}</div>
+          <div class="flip-face flip-face--back">${escapeHtml(card.back)}</div>
+        </div>
+      </div>
+      <p class="study-flip-hint" id="node-flip-hint">Clique no card pra virar</p>
+      <div class="grade-row" id="node-grade-row" hidden>
+        <button class="grade-btn" data-grade="again">Errei</button>
+        <button class="grade-btn" data-grade="hard">Difícil</button>
+        <button class="grade-btn" data-grade="good">Bom</button>
+        <button class="grade-btn" data-grade="easy">Fácil</button>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="node-delete">Excluir</button>
+        <button class="btn btn-ghost" id="node-close">Fechar</button>
+        <button class="btn btn-primary" id="node-edit">Editar</button>
+      </div>
+    </div>
+  `);
+
+  const flipEl = document.getElementById('node-flip');
+  flipEl.addEventListener('click', () => {
+    flipEl.classList.toggle('is-flipped');
+    const flipped = flipEl.classList.contains('is-flipped');
+    document.getElementById('node-flip-hint').hidden = flipped;
+    document.getElementById('node-grade-row').hidden = !flipped;
+  });
+
+  document.getElementById('node-close').addEventListener('click', closeModal);
+  document.getElementById('node-edit').addEventListener('click', () => {
+    openEditFlashcardModal(card, { onSaved: () => renderMindMap() });
+  });
+  document.getElementById('node-delete').addEventListener('click', () => {
+    Flashcard.remove(card.id);
+    closeModal();
+    renderAll();
+    renderMindMap();
+  });
+  document.querySelectorAll('#node-grade-row .grade-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const updated = window.SRS.scheduleNextReview(card, btn.dataset.grade);
+      Flashcard.update(updated);
+      closeModal();
+      renderMindMap();     // colors/labels may have changed (due status)
+      renderDashboard();
+    });
+  });
+}
+
+/* ================================================================
+ * POMODORO wiring
+ * ================================================================ */
+const RING_CIRCUMFERENCE = 2 * Math.PI * 90; // matches r="90" in the SVG
+
+function initPomodoro() {
+  const saved = Settings.get(); // { focusMinutes, shortBreakMinutes, longBreakMinutes }
+
+  state.timer = new window.PomodoroTimer({
+    focusMinutes: saved.focusMinutes,
+    shortBreakMinutes: saved.shortBreakMinutes,
+    longBreakMinutes: saved.longBreakMinutes,
+    onTick: renderTimerTick,
+    onModeChange: renderTimerMode,
+    onFocusComplete: () => {
+      Session.logPomodoro();
+      renderDashboard();
+    },
+  });
+
+  // Reflect the saved durations in the number inputs, so what you
+  // see matches what the timer will actually run (instead of
+  // always showing the hardcoded 25/5/15 defaults).
+  document.getElementById('cfg-focus').value = saved.focusMinutes;
+  document.getElementById('cfg-short').value = saved.shortBreakMinutes;
+  document.getElementById('cfg-long').value = saved.longBreakMinutes;
+
+  renderTimerTick({ secondsLeft: saved.focusMinutes * 60, totalSeconds: saved.focusMinutes * 60, mode: 'focus' });
+}
+
+function renderTimerTick({ secondsLeft, totalSeconds, mode }) {
+  const mins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+  const secs = String(secondsLeft % 60).padStart(2, '0');
+  document.getElementById('timer-time').textContent = `${mins}:${secs}`;
+
+  const progressRatio = 1 - secondsLeft / totalSeconds;
+  const offset = RING_CIRCUMFERENCE * (1 - progressRatio);
+  document.getElementById('ring-progress').style.strokeDashoffset = offset;
+}
+
+function renderTimerMode(mode) {
+  const labels = { focus: 'foco', short: 'pausa curta', long: 'pausa longa' };
+  document.getElementById('timer-mode').textContent = labels[mode];
+}
+
+/* ================================================================
+ * MODAL helpers (shared by "new subject" / "new note" / "new flashcard")
+ * ================================================================ */
+function openModal(html) {
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal-backdrop').classList.add('is-open');
+}
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('is-open');
+}
+
+function subjectOptionsHtml() {
+  return Subject.all().map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+}
+
+function openNewSubjectModal() {
+  openModal(`
+    <h3>Nova matéria</h3>
+    <label>Nome
+      <input type="text" id="input-subject-name" placeholder="Ex: Direito Constitucional" />
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const name = document.getElementById('input-subject-name').value.trim();
+    if (!name) return;
+    const color = SUBJECT_COLORS[Subject.all().length % SUBJECT_COLORS.length];
+    Subject.add(name, color);
+    closeModal();
+    renderAll();
+  });
+}
+
+function openNewNoteModal() {
+  if (Subject.all().length === 0) return openNewSubjectModal();
+  openModal(`
+    <h3>Nova anotação</h3>
+    <label>Matéria
+      <select id="input-note-subject">${subjectOptionsHtml()}</select>
+    </label>
+    <label>Título
+      <input type="text" id="input-note-title" placeholder="Ex: Verbos irregulares" />
+    </label>
+    <label>Conteúdo
+      <textarea id="input-note-body" placeholder="Escreva sua anotação aqui..."></textarea>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const subjectId = document.getElementById('input-note-subject').value;
+    const title = document.getElementById('input-note-title').value.trim();
+    const body = document.getElementById('input-note-body').value.trim();
+    if (!title) return;
+    Note.add(subjectId, title, body);
+    closeModal();
+    renderAll();
+  });
+}
+
+function openNewFlashcardModal() {
+  if (Subject.all().length === 0) return openNewSubjectModal();
+  openModal(`
+    <h3>Novo flashcard</h3>
+    <label>Matéria
+      <select id="input-card-subject">${subjectOptionsHtml()}</select>
+    </label>
+    <label>Frente (pergunta)
+      <textarea id="input-card-front" placeholder="Ex: O que é um closure em JavaScript?"></textarea>
+    </label>
+    <label>Verso (resposta)
+      <textarea id="input-card-back" placeholder="Resposta..."></textarea>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const subjectId = document.getElementById('input-card-subject').value;
+    const front = document.getElementById('input-card-front').value.trim();
+    const back = document.getElementById('input-card-back').value.trim();
+    if (!front || !back) return;
+    Flashcard.add(subjectId, front, back);
+    closeModal();
+    renderAll();
+  });
+}
+
+function openEditSubjectModal(subject) {
+  openModal(`
+    <h3>Editar matéria</h3>
+    <label>Nome
+      <input type="text" id="input-subject-name" value="${escapeHtml(subject.name)}" />
+    </label>
+    <label>Cor
+      <select id="input-subject-color">
+        ${SUBJECT_COLORS.map((c) => `<option value="${c}" ${c === subject.color ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const name = document.getElementById('input-subject-name').value.trim();
+    const color = document.getElementById('input-subject-color').value;
+    if (!name) return;
+    Subject.update(subject.id, { name, color });
+    closeModal();
+    renderAll();
+  });
+}
+
+function openEditNoteModal(note) {
+  openModal(`
+    <h3>Editar anotação</h3>
+    <label>Matéria
+      <select id="input-note-subject">${subjectOptionsHtml()}</select>
+    </label>
+    <label>Título
+      <input type="text" id="input-note-title" value="${escapeHtml(note.title)}" />
+    </label>
+    <label>Conteúdo
+      <textarea id="input-note-body">${escapeHtml(note.body)}</textarea>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('input-note-subject').value = note.subjectId;
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const subjectId = document.getElementById('input-note-subject').value;
+    const title = document.getElementById('input-note-title').value.trim();
+    const body = document.getElementById('input-note-body').value.trim();
+    if (!title) return;
+    Note.update(note.id, { subjectId, title, body });
+    closeModal();
+    renderAll();
+  });
+}
+
+function openEditFlashcardModal(card, { onSaved } = {}) {
+  openModal(`
+    <h3>Editar flashcard</h3>
+    <label>Matéria
+      <select id="input-card-subject">${subjectOptionsHtml()}</select>
+    </label>
+    <label>Frente (pergunta)
+      <textarea id="input-card-front">${escapeHtml(card.front)}</textarea>
+    </label>
+    <label>Verso (resposta)
+      <textarea id="input-card-back">${escapeHtml(card.back)}</textarea>
+    </label>
+    <p class="empty-state" style="text-align:left;padding:8px 0;background:none;border:none;">
+      Editar aqui só corrige o conteúdo — o progresso de revisão desse card não é afetado.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save">Salvar</button>
+    </div>
+  `);
+  document.getElementById('input-card-subject').value = card.subjectId;
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-save').addEventListener('click', () => {
+    const subjectId = document.getElementById('input-card-subject').value;
+    const front = document.getElementById('input-card-front').value.trim();
+    const back = document.getElementById('input-card-back').value.trim();
+    if (!front || !back) return;
+    Flashcard.editContent(card.id, { subjectId, front, back });
+    closeModal();
+    renderAll();
+    if (onSaved) onSaved();
+  });
+}
+
+/* ================================================================
+ * TAB NAVIGATION
+ * ================================================================ */
+function switchTab(tabName) {
+  state.currentTab = tabName;
+
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-active', t.dataset.tab === tabName));
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('is-active', v.id === `view-${tabName}`));
+
+  if (tabName === 'reviews') renderReviewsTab();
+}
+
+/* ================================================================
+ * EXPORT (used by the "Exportar dados" button — a JSON backup the
+ * Python script in /python can also read to generate a report).
+ * ================================================================ */
+function exportData() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    subjects: Subject.all(),
+    notes: Note.all(),
+    flashcards: Flashcard.all(),
+    sessions: Session.all(),
+    settings: Settings.get(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `study-system-export-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Reads a .json file previously produced by exportData() (see the
+ * hidden <input type="file"> wired to the "Importar dados" button)
+ * and replaces everything currently stored with it. Mainly useful
+ * so you don't have to rebuild your study data by hand every time
+ * you try out a new version of the app -- export before, import
+ * after.
+ */
+function importDataFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (err) {
+      alert('Esse arquivo não é um JSON válido.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Importar vai SUBSTITUIR todos os dados atuais (matérias, anotações, flashcards, sessões e configurações) pelos do arquivo. Essa ação não pode ser desfeita. Continuar?'
+    );
+    if (!confirmed) return;
+
+    try {
+      window.DataLayer.importAll(data);
+    } catch (err) {
+      alert('Não consegui importar esse arquivo: ' + err.message);
+      return;
+    }
+
+    state.activeSubjectId = 'all';
+    switchTab('dashboard');
+    applyTheme(Settings.get().theme);
+    renderAll();
+    if (state.timer) state.timer.pause(); // don't leave an orphaned interval running
+    initPomodoro(); // reload durations in case the import brought different ones
+    document.getElementById('btn-timer-start').textContent = 'Iniciar';
+  };
+  reader.readAsText(file);
+}
+
+/* ================================================================
+ * SMALL UTILITIES
+ * ================================================================ */
+function filterBySubject(items) {
+  if (state.activeSubjectId === 'all') return items;
+  return items.filter((i) => i.subjectId === state.activeSubjectId);
+}
+function subjectName(id) {
+  const s = Subject.all().find((s) => s.id === id);
+  return s ? escapeHtml(s.name) : 'Sem matéria';
+}
+function subjectColor(id) {
+  const s = Subject.all().find((s) => s.id === id);
+  return s ? s.color : 'var(--border-soft)';
+}
+function truncate(str, max) {
+  return str.length > max ? str.slice(0, max) + '…' : str;
+}
+/** Escapes HTML special characters to prevent broken markup or XSS
+ * when rendering user-typed text back into innerHTML. */
+function escapeHtml(str = '') {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ================================================================
+ * MASTER RENDER — calls every render function for the active tab
+ * plus the sidebar, which is always visible.
+ * ================================================================ */
+function renderAll() {
+  renderSubjectList();
+  renderDashboard();
+  renderNotes();
+  renderFlashcards();
+}
+
+/* ================================================================
+ * BOOTSTRAP — runs once when the page loads
+ * ================================================================ */
+function init() {
+  // Data loading/seeding is wrapped in its own try/catch. If ANYTHING
+  // here throws unexpectedly, we still want every button below to
+  // respond to clicks -- a broken render is much less frustrating
+  // than a page that looks alive but silently does nothing.
+  try {
+    seedIfEmpty();
+    applyTheme(Settings.get().theme);
+    renderAll();
+    initPomodoro();
+  } catch (err) {
+    console.error('Failed to initialize app data:', err);
+  }
+
+  if (window.DataLayer.isPersistent === false) {
+    document.getElementById('persist-banner').hidden = false;
+  }
+
+  // Tab clicks
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+  });
+
+  // Sidebar "new subject" button
+  document.getElementById('btn-customize').addEventListener('click', openCustomizeModal);
+  document.getElementById('btn-new-subject').addEventListener('click', openNewSubjectModal);
+  document.getElementById('btn-new-note').addEventListener('click', openNewNoteModal);
+  document.getElementById('btn-new-flashcard').addEventListener('click', openNewFlashcardModal);
+  document.getElementById('btn-export').addEventListener('click', exportData);
+  document.getElementById('btn-import').addEventListener('click', () => {
+    document.getElementById('input-import-file').click();
+  });
+  document.getElementById('input-import-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) importDataFromFile(file);
+    e.target.value = ''; // allow importing the same filename again later
+  });
+
+  setupMindMapInteractions();
+
+  // Clicking the dark backdrop (but not the modal itself) closes it
+  document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-backdrop') closeModal();
+  });
+
+  // Pomodoro controls
+  document.getElementById('btn-timer-start').addEventListener('click', (e) => {
+    if (state.timer.isRunning()) {
+      state.timer.pause();
+      e.target.textContent = 'Iniciar';
+    } else {
+      state.timer.start();
+      e.target.textContent = 'Pausar';
+    }
+  });
+  document.getElementById('btn-timer-reset').addEventListener('click', () => {
+    state.timer.reset();
+    document.getElementById('btn-timer-start').textContent = 'Iniciar';
+  });
+  ['cfg-focus', 'cfg-short', 'cfg-long'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', () => {
+      const durations = {
+        focusMinutes: Number(document.getElementById('cfg-focus').value) || 1,
+        shortBreakMinutes: Number(document.getElementById('cfg-short').value) || 1,
+        longBreakMinutes: Number(document.getElementById('cfg-long').value) || 1,
+      };
+      state.timer.setDurations(durations);
+      Settings.update(durations); // persist so it's remembered next time you open the app
+    });
+  });
+
+  // Review mode toggle (Mapa mental <-> Sequencial)
+  document.querySelectorAll('#review-mode-toggle button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.reviewMode = btn.dataset.mode;
+      document.querySelectorAll('#review-mode-toggle button').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderReviewsTab();
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+  </script>
+</body>
+</html>
