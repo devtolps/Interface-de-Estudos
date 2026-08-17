@@ -1,3 +1,4 @@
+
 # 📚 Study System
 
 Um sistema de estudos pessoal, feito pra rodar direto do navegador, sem
@@ -97,3 +98,9 @@ já domina aparecem cada vez menos.
 ---
 
 Feito com carinho pra estudar de verdade. Bons estudos! ✺
+
+A interface tem o íntuito de auxiliar o usuário a organizar ideias, criar revisões, anotações 
+e ter um local fixo digital para você armazenar informações importantes para seus estudos.
+
+https://devtolps.github.io/Interface-de-Estudos/
+
